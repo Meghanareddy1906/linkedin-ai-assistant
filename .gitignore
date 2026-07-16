@@ -1,3 +1,5 @@
 node_modules/
 auth.json
 .env
+inbox-data.json
+debug-screenshot.png
