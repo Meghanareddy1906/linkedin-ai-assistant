@@ -1,107 +1,89 @@
-# LinkedIn Assistant — Day 1: Environment + Playwright Setup
+# LinkedIn Assistant
 
-This covers exactly today's scope: get Playwright installed, log into
-LinkedIn once manually, save the session, and confirm it persists.
+A personal AI-powered LinkedIn assistant with a multi-agent architecture.
+Read-only browser automation gathers data from LinkedIn; AI agents draft
+suggestions; all outward actions (sending messages, posting, connecting)
+are reviewed and executed manually by the user, per the project's
+compliance-first design.
 
-No scraping, no agents, no WhatsApp yet — just proving the foundation works.
+## Project Structure
 
-## Prerequisites
+```
+linkedin-assistant/
+├── src/
+│   ├── session/          # Login and session persistence
+│   │   ├── 1-login-and-save-session.js
+│   │   └── 2-verify-session.js
+│   ├── scrapers/         # Read-only data extraction from LinkedIn
+│   │   ├── 3-read-inbox.js
+│   │   ├── 4-read-full-threads.js
+│   │   └── 6-read-profile.js
+│   └── agents/           # AI-powered drafting/analysis
+│       └── 5-draft-replies.js
+├── data/                 # Generated data (gitignored - contains
+│                            personal info, never committed)
+├── .env                  # API keys (gitignored)
+├── .gitignore
+├── package.json
+└── README.md
+```
 
-- Node.js installed (v18 or later recommended). Check with:
-  ```
-  node --version
-  ```
-  If you don't have it, install from https://nodejs.org
-
-## Step-by-step
-
-### 1. Get the project files onto your machine
-
-Download/copy this `linkedin-assistant` folder to your computer. It already
-has `package.json` set up with Playwright and dotenv as dependencies.
-
-### 2. Install dependencies
-
-Open a terminal in the `linkedin-assistant` folder and run:
+## Setup
 
 ```bash
 npm install
-```
-
-This installs the Playwright and dotenv packages listed in package.json.
-
-### 3. Install the actual browser binaries
-
-Playwright needs to download real browser binaries (Chromium) separately
-from the npm package. Run:
-
-```bash
 npx playwright install chromium
 ```
 
-This may take a minute or two — it's downloading an actual browser.
-
-### 4. Run the login script
-
-```bash
-node 1-login-and-save-session.js
+Create a `.env` file in the project root with:
+```
+GEMINI_API_KEY=your_key_here
 ```
 
-What will happen:
-- A real Chrome-like browser window will pop open (not headless — you'll
-  see it)
-- It navigates to LinkedIn's login page
-- **You log in manually** — type your email and password yourself, solve
-  any CAPTCHA or verification step LinkedIn shows you, just like you
-  normally would
-- Once you land on your feed, the script detects this automatically and
-  saves your session to a new file called `auth.json`
-- The terminal will print a confirmation and the browser will close
+## Running the scripts
 
-**Important:** `auth.json` contains your live session cookies — treat it
-like a password. It's already excluded from git via `.gitignore`. Don't
-share it or commit it anywhere.
+All commands are run from the project root (not from inside `src/`).
 
-### 5. Verify the session persists
-
-Close everything, then run:
-
+**1. Log in and save your session** (run this first, and again any time
+your session expires):
 ```bash
-node 2-verify-session.js
+node src/session/1-login-and-save-session.js
 ```
 
-What will happen:
-- A new browser opens, this time using the saved `auth.json` instead of
-  asking you to log in
-- It navigates straight to your LinkedIn feed
-- The terminal will print ✅ SUCCESS if you're logged in automatically, or
-  ❌ FAILED if you got redirected to login/verification
+**2. Verify the saved session still works:**
+```bash
+node src/session/2-verify-session.js
+```
 
-If it succeeds, you've proven the core mechanism the whole project depends
-on: **persisting a LinkedIn session so the assistant can read your account
-without you logging in every time.**
+**3. Read inbox conversation previews:**
+```bash
+node src/scrapers/3-read-inbox.js
+```
 
-## Troubleshooting
+**4. Read full message threads:**
+```bash
+node src/scrapers/4-read-full-threads.js
+```
 
-- **Browser doesn't open / errors on launch**: re-run
-  `npx playwright install chromium` — the binary may not have downloaded
-  correctly.
-- **Script hangs after login**: LinkedIn's URL after login is usually
-  `linkedin.com/feed/...`. If LinkedIn changed their post-login redirect,
-  you may need to just manually navigate to your feed after logging in —
-  the script is waiting for that URL pattern.
-- **Session verify fails (❌ FAILED)**: this is common on the first few
-  tries. Re-run the login script to get a fresh `auth.json`. If it keeps
-  failing, LinkedIn may be flagging the browser context as suspicious —
-  try leaving more time between the two scripts, or check if LinkedIn sent
-  you a security email.
-- **LinkedIn shows a CAPTCHA or "verify it's you" prompt**: this is normal,
-  solve it manually in the browser window as you would normally. Just note
-  it happened — from our earlier discussion, this is worth logging over
-  time as an early signal of how LinkedIn is treating this browser session.
+**5. Draft AI-powered replies** (requires threads-data.json from step 4,
+and a GEMINI_API_KEY in .env):
+```bash
+node src/agents/5-draft-replies.js
+```
 
-## What's next (not today)
+**6. Read your own profile data:**
+```bash
+node src/scrapers/6-read-profile.js
+```
 
-Once both scripts work reliably, the next step is building a read-only
-scraper that pulls specific data (inbox messages, profile info) using this
-same saved session — but that's a separate step for after this is solid.
+## Important notes
+
+- All scripts are **read-only automation** except the Gemini drafting
+  script, which only generates text - nothing is ever sent to LinkedIn
+  automatically. Sending messages, connecting, or posting is always done
+  manually by the user after reviewing AI-drafted suggestions.
+- The `data/` folder contains real personal data (messages, profile info)
+  and is excluded from git via `.gitignore`. Never remove it from
+  `.gitignore`.
+- `auth.json` (inside `data/`) contains live session credentials - treat
+  it like a password.

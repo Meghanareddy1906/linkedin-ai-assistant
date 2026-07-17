@@ -20,7 +20,7 @@
 
 const { chromium } = require('playwright');
 
-const AUTH_FILE = 'auth.json';
+const AUTH_FILE = 'data/auth.json';
 
 async function main() {
   console.log('Launching browser...');

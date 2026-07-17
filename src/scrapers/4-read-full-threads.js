@@ -1,5 +1,5 @@
 /**
- * STEP 4: Read full message threads
+ * Read full message threads
  *
  * What this does:
  * - Reuses your saved auth.json session
@@ -25,8 +25,8 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 
-const AUTH_FILE = 'auth.json';
-const OUTPUT_FILE = 'threads-data.json';
+const AUTH_FILE = 'data/auth.json';
+const OUTPUT_FILE = 'data/threads-data.json';
 
 async function main() {
   if (!fs.existsSync(AUTH_FILE)) {
@@ -58,8 +58,8 @@ async function main() {
   if (conversationCount === 0) {
     console.log('\n⚠️  No conversations found in the list.');
     console.log('Taking a screenshot to inspect the page...');
-    await page.screenshot({ path: 'debug-screenshot.png', fullPage: true });
-    console.log('Check debug-screenshot.png to see what the page looked like.');
+    await page.screenshot({ path: 'data/debug-screenshot.png', fullPage: true });
+    console.log('Check data/debug-screenshot.png to see what the page looked like.');
     await browser.close();
     return;
   }
@@ -131,7 +131,7 @@ async function main() {
     console.log('\n⚠️  Note: conversations were found and opened, but no messages');
     console.log('were captured inside them. This likely means the message-item');
     console.log('selector needs adjusting. Taking a screenshot for reference...');
-    await page.screenshot({ path: 'debug-screenshot.png', fullPage: true });
+    await page.screenshot({ path: 'data/debug-screenshot.png', fullPage: true });
   }
 
   console.log('\nLeaving browser open for 15 seconds...');

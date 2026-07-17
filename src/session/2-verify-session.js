@@ -16,7 +16,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 
-const AUTH_FILE = 'auth.json';
+const AUTH_FILE = 'data/auth.json';
 
 async function main() {
   if (!fs.existsSync(AUTH_FILE)) {

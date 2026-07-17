@@ -1,5 +1,5 @@
 /**
- * STEP 3: Read-only inbox scraper
+ * Read-only inbox scraper
  *
  * What this does:
  * - Reuses your saved auth.json session (no login needed)
@@ -23,8 +23,8 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 
-const AUTH_FILE = 'auth.json';
-const OUTPUT_FILE = 'inbox-data.json';
+const AUTH_FILE = 'data/auth.json';
+const OUTPUT_FILE = 'data/inbox-data.json';
 
 async function main() {
   if (!fs.existsSync(AUTH_FILE)) {
@@ -54,8 +54,6 @@ async function main() {
   // of this dynamically via JavaScript after the initial page load)
   console.log('Waiting for conversation list to load...');
   await page.waitForTimeout(5000);
-  await page.screenshot({ path: 'debug-screenshot.png', fullPage: true });
-  console.log('Screenshot saved to debug-screenshot.png — check what the page actually shows.');
 
   // Try to find conversation list items.
   // NOTE: This selector is a best guess at LinkedIn's current structure.

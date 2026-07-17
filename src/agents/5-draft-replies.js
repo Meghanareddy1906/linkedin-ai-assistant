@@ -1,5 +1,5 @@
 /**
- * STEP 5: Draft replies using Gemini (free tier)
+ * Draft replies using Gemini (free tier)
  *
  * What this does:
  * - Reads threads-data.json (captured by 4-read-full-threads.js)
@@ -17,8 +17,8 @@
 require('dotenv').config();
 const fs = require('fs');
 
-const INPUT_FILE = 'threads-data.json';
-const OUTPUT_FILE = 'drafted-replies.json';
+const INPUT_FILE = 'data/threads-data.json';
+const OUTPUT_FILE = 'data/drafted-replies.json';
 
 const API_KEY = process.env.GEMINI_API_KEY;
 const MODEL = 'gemini-3.1-flash-lite'; // free tier model
