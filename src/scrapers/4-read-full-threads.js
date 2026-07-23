@@ -1,5 +1,5 @@
 /**
- * Read full message threads
+ * STEP 4: Read full message threads
  *
  * What this does:
  * - Reuses your saved auth.json session
@@ -9,7 +9,9 @@
  *   a conversation does not send anything or change any data)
  * - Extracts every message in that thread: who sent it, the text, and
  *   roughly when
- * - Saves everything to threads-data.json
+ * - Saves each conversation and its messages to the database, skipping
+ *   any messages already stored (deduplication via unique constraint)
+ * - Also saves a JSON snapshot to threads-data.json for easy inspection
  *
  * This is still READ-ONLY. It only opens conversations to view them, the
  * same as you would by clicking on them yourself. It does not type,
@@ -19,14 +21,62 @@
  * guess at LinkedIn's current structure. If results look empty or wrong,
  * we'll inspect the actual page together and adjust.
  *
- * Run with: node 4-read-full-threads.js
+ * Run with: node src/scrapers/4-read-full-threads.js
  */
 
 const { chromium } = require('playwright');
 const fs = require('fs');
+const pool = require('../db/db');
 
 const AUTH_FILE = 'data/auth.json';
 const OUTPUT_FILE = 'data/threads-data.json';
+
+// Inserts/updates a conversation and its messages in the database.
+// Returns how many messages were genuinely new (not already stored).
+async function saveThreadToDatabase(participantName, messages) {
+  // Find or create the conversation row for this participant
+  const convResult = await pool.query(
+    `INSERT INTO conversations (participant_name, last_scraped_at, message_count)
+     VALUES ($1, NOW(), 0)
+     ON CONFLICT (participant_name)
+     DO UPDATE SET last_scraped_at = NOW()
+     RETURNING id`,
+    [participantName]
+  );
+  const conversationId = convResult.rows[0].id;
+
+  let newMessageCount = 0;
+
+  for (const msg of messages) {
+    // ON CONFLICT DO NOTHING means duplicates (same conversation, sender,
+    // text, timestamp) are silently skipped. RETURNING id only returns a
+    // row if the insert actually happened, so we can count genuinely new
+    // messages.
+    const insertResult = await pool.query(
+      `INSERT INTO messages (conversation_id, sender, message_text, message_timestamp)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (conversation_id, sender, message_text, message_timestamp)
+       DO NOTHING
+       RETURNING id`,
+      [conversationId, msg.sender, msg.text, msg.timestamp]
+    );
+    if (insertResult.rows.length > 0) {
+      newMessageCount++;
+    }
+  }
+
+  // Update the total message count for this conversation
+  const countResult = await pool.query(
+    'SELECT COUNT(*) FROM messages WHERE conversation_id = $1',
+    [conversationId]
+  );
+  await pool.query('UPDATE conversations SET message_count = $1 WHERE id = $2', [
+    countResult.rows[0].count,
+    conversationId,
+  ]);
+
+  return { conversationId, newMessageCount, totalMessageCount: parseInt(countResult.rows[0].count) };
+}
 
 async function main() {
   if (!fs.existsSync(AUTH_FILE)) {
@@ -110,11 +160,19 @@ async function main() {
       return results;
     });
 
-    console.log(`  -> ${participantName.trim()}: captured ${messages.length} message(s)`);
+    console.log(`  -> ${participantName.trim()}: captured ${messages.length} message(s) on page`);
+
+    // Save to database, with deduplication handled automatically
+    const dbResult = await saveThreadToDatabase(participantName.trim(), messages);
+    console.log(
+      `  -> Database: ${dbResult.newMessageCount} new message(s) added ` +
+      `(${dbResult.totalMessageCount} total stored for this conversation)`
+    );
 
     allThreads.push({
       participant: participantName.trim(),
       messageCount: messages.length,
+      newMessageCount: dbResult.newMessageCount,
       messages: messages,
     });
 
@@ -125,7 +183,10 @@ async function main() {
   }
 
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(allThreads, null, 2));
-  console.log(`\nSaved ${allThreads.length} thread(s) to ${OUTPUT_FILE}`);
+  console.log(`\nSaved ${allThreads.length} thread(s) to ${OUTPUT_FILE} (JSON snapshot)`);
+
+  const totalNew = allThreads.reduce((sum, t) => sum + t.newMessageCount, 0);
+  console.log(`Total new messages added to database this run: ${totalNew}`);
 
   if (allThreads.length > 0 && allThreads[0].messages.length === 0) {
     console.log('\n⚠️  Note: conversations were found and opened, but no messages');
@@ -138,6 +199,7 @@ async function main() {
   await page.waitForTimeout(15000);
 
   await browser.close();
+  await pool.end();
 }
 
 main().catch((err) => {
