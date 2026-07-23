@@ -1,5 +1,5 @@
 /**
- * Read-only profile scraper
+ * STEP 6: Read-only profile scraper
  *
  * What this does:
  * - Reuses your saved auth.json session
@@ -185,21 +185,30 @@ async function main() {
   // Take an initial snapshot before scrolling (captures top card info)
   profileData = mergeSnapshot(profileData, await extractSnapshot(page));
 
-  console.log('Scrolling through page, extracting sections as they render...');
-  let previousHeight = 0;
-  let currentHeight = await page.evaluate(() => document.body.scrollHeight);
+  // Scroll the actual inner scrollable container (a <main> element, not
+  // the browser window - confirmed via diagnostic that window scrolling
+  // does nothing on this page). We scroll it incrementally, extracting
+  // data on each step to catch virtualized/lazy-loaded sections as they
+  // render.
+  console.log('Scrolling through the inner main container, extracting sections as they render...');
+  let previousScrollTop = -1;
+  let currentScrollTop = 0;
   let steps = 0;
-  const MAX_STEPS = 40; // safety cap so this can't scroll forever
+  const MAX_STEPS = 40;
 
-  while (previousHeight !== currentHeight && steps < MAX_STEPS) {
-    await page.evaluate(() => window.scrollBy(0, 600));
+  while (previousScrollTop !== currentScrollTop && steps < MAX_STEPS) {
+    currentScrollTop = await page.evaluate(() => {
+      const main = document.querySelector('main');
+      if (!main) return -1;
+      main.scrollBy(0, 600);
+      return main.scrollTop;
+    });
     await page.waitForTimeout(900);
 
-    // Extract and merge on every step, not just at the end
     profileData = mergeSnapshot(profileData, await extractSnapshot(page));
 
-    previousHeight = currentHeight;
-    currentHeight = await page.evaluate(() => document.body.scrollHeight);
+    if (currentScrollTop === previousScrollTop) break;
+    previousScrollTop = currentScrollTop;
     steps++;
   }
 
@@ -216,6 +225,57 @@ async function main() {
     )
   );
   console.log('All data-testid values found on page:', allTestIds);
+
+  // DIAGNOSTIC: test whether Experience/Education/Skills sections are
+  // hidden inside a shadow DOM boundary. Playwright's locator() API can
+  // pierce OPEN shadow roots automatically, unlike document.querySelector
+  // used inside page.evaluate(). If locator finds these but our earlier
+  // extraction didn't, that confirms shadow DOM is the real cause.
+  const expLocatorCount = await page
+    .locator('[data-testid^="profile_ExperienceTopLevelSection"]')
+    .count();
+  const eduLocatorCount = await page
+    .locator('[data-testid^="profile_EducationTopLevelSection"]')
+    .count();
+  const skillsLocatorCount = await page
+    .locator('[data-testid^="profile_Skills"]')
+    .count();
+  console.log('\n--- Shadow DOM diagnostic (via Playwright locator) ---');
+  console.log('Experience section found via locator:', expLocatorCount);
+  console.log('Education section found via locator:', eduLocatorCount);
+  console.log('Skills section found via locator:', skillsLocatorCount);
+  console.log('--------------------------------------------------------');
+
+  // DIAGNOSTIC 2: check whether window-level scrolling is actually doing
+  // anything, or whether the real scrollable content lives inside a
+  // nested container (common in modern single-page apps). If window
+  // scrollY never changes, our scroll loop has been scrolling nothing.
+  const scrollDiagnostic = await page.evaluate(() => {
+    const scrollableElements = [];
+    document.querySelectorAll('*').forEach((el) => {
+      const style = window.getComputedStyle(el);
+      const isScrollable =
+        (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+        el.scrollHeight > el.clientHeight + 50;
+      if (isScrollable) {
+        scrollableElements.push({
+          tag: el.tagName,
+          className: (el.className && el.className.toString().slice(0, 60)) || null,
+          scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight,
+        });
+      }
+    });
+    return {
+      bodyScrollHeight: document.body.scrollHeight,
+      windowInnerHeight: window.innerHeight,
+      currentWindowScrollY: window.scrollY,
+      candidateScrollContainers: scrollableElements.slice(0, 10),
+    };
+  });
+  console.log('\n--- Scroll container diagnostic ---');
+  console.log(scrollDiagnostic);
+  console.log('------------------------------------');
 
   // Always take a screenshot at this point for visual confirmation,
   // regardless of whether extraction succeeded
