@@ -66,9 +66,9 @@ GAPS TO ADDRESS:
 (List any missing sections or weak spots - e.g. no headline, no About, thin experience descriptions)
 
 TOP 3 ACTIONABLE NEXT STEPS:
-(Concrete, prioritized actions to improve this profile)
+(Exactly 3 numbered steps, each ONE sentence only, no sub-bullets, no repeated phrasing)
 
-Be specific and concrete, not generic. Base suggestions on the actual content provided, not boilerplate advice.`;
+Be specific and concrete, not generic. Base suggestions on the actual content provided, not boilerplate advice. Keep each section concise - do not repeat the same sentence or phrase multiple times.`;
 }
 
 async function main() {
@@ -94,6 +94,10 @@ async function main() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.4, // lower temperature reduces repetition loop risk
+        maxOutputTokens: 1024, // caps runaway output if a loop still occurs
+      },
     }),
   });
 
