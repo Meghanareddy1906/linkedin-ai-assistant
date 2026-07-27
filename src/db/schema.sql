@@ -24,12 +24,31 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 -- Stores AI-drafted replies per conversation, so we don't re-draft a
--- reply if nothing new has come in since the last draft.
+-- reply if nothing new has come in since the last draft. The "approved"
+-- column tracks whether the user approved this draft via WhatsApp.
 CREATE TABLE IF NOT EXISTS drafted_replies (
   id SERIAL PRIMARY KEY,
   conversation_id INT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   draft_text TEXT NOT NULL,
   based_on_message_count INT NOT NULL,
+  approved BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tracks suggested connections and drafted outreach notes, so we don't
+-- redraft a note for someone we've already processed. Deduped by name,
+-- since LinkedIn's suggestion cards don't expose a real profile link in
+-- their HTML (navigation happens via JS click handler, not a real <a>).
+-- The "approved" column tracks whether the user approved this note via
+-- WhatsApp.
+CREATE TABLE IF NOT EXISTS connections (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  headline TEXT,
+  profile_url TEXT,
+  draft_note TEXT,
+  approved BOOLEAN DEFAULT FALSE,
+  drafted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
