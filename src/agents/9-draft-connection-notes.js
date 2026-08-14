@@ -20,6 +20,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const pool = require('../db/db');
+const twilio = require('twilio');
 
 const SUGGESTIONS_FILE = 'data/suggested-connections.json';
 const PROFILE_FILE = 'data/profile-data.json';
@@ -65,6 +66,19 @@ Write a short, genuine-sounding connection note (LinkedIn's limit is 300 charact
     '(No note generated - check response structure)';
 
   return note;
+}
+
+async function sendWhatsApp(message) {
+  try {
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    await client.messages.create({
+      from: process.env.TWILIO_WHATSAPP_FROM,
+      to: `whatsapp:${process.env.TWILIO_WHATSAPP_TO}`,
+      body: message,
+    });
+  } catch (err) {
+    console.warn(`  ⚠️  WhatsApp send failed: ${err.message}`);
+  }
 }
 
 async function main() {
@@ -120,6 +134,13 @@ async function main() {
          ON CONFLICT (name) DO UPDATE SET draft_note = $4, drafted_at = NOW()`,
         [candidate.name, candidate.headline, candidate.profileUrl, note]
       );
+
+      // Send WhatsApp notification for approval
+      const firstName = candidate.name.split(' ')[0].toLowerCase();
+      await sendWhatsApp(
+        `🤝 *New Connection Note* for ${candidate.name}:\n\n${note}\n\nReply *approve ${firstName}* to send or *skip ${firstName}* to reject.`
+      );
+      console.log(`  📱 WhatsApp notification sent for ${candidate.name}`);
 
       results.push({ name: candidate.name, note, status: 'newly generated' });
     } catch (err) {

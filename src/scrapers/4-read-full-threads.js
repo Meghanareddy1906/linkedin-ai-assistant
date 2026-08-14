@@ -33,15 +33,14 @@ const OUTPUT_FILE = 'data/threads-data.json';
 
 // Inserts/updates a conversation and its messages in the database.
 // Returns how many messages were genuinely new (not already stored).
-async function saveThreadToDatabase(participantName, messages) {
-  // Find or create the conversation row for this participant
+async function saveThreadToDatabase(participantName, messages, threadUrl) {
   const convResult = await pool.query(
-    `INSERT INTO conversations (participant_name, last_scraped_at, message_count)
-     VALUES ($1, NOW(), 0)
+    `INSERT INTO conversations (participant_name, last_scraped_at, message_count, thread_url)
+     VALUES ($1, NOW(), 0, $2)
      ON CONFLICT (participant_name)
-     DO UPDATE SET last_scraped_at = NOW()
+     DO UPDATE SET last_scraped_at = NOW(), thread_url = $2
      RETURNING id`,
-    [participantName]
+    [participantName, threadUrl]
   );
   const conversationId = convResult.rows[0].id;
 
@@ -135,6 +134,10 @@ async function main() {
     // Wait for the message thread panel to load
     await page.waitForTimeout(2500);
 
+    // Capture the thread URL from the address bar after clicking
+    const threadUrl = page.url();
+    console.log(`  -> Thread URL: ${threadUrl}`);
+
     // Extract all messages in the currently open thread
     const messages = await page.evaluate(() => {
       const results = [];
@@ -163,7 +166,7 @@ async function main() {
     console.log(`  -> ${participantName.trim()}: captured ${messages.length} message(s) on page`);
 
     // Save to database, with deduplication handled automatically
-    const dbResult = await saveThreadToDatabase(participantName.trim(), messages);
+    const dbResult = await saveThreadToDatabase(participantName.trim(), messages, threadUrl);
     console.log(
       `  -> Database: ${dbResult.newMessageCount} new message(s) added ` +
       `(${dbResult.totalMessageCount} total stored for this conversation)`

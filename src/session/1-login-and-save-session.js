@@ -1,5 +1,5 @@
 /**
- * STEP 1: Manual login + session save
+ * Manual login + session save
  *
  * What this does:
  * - Opens a real, visible Chromium browser (not headless, so you can see it)

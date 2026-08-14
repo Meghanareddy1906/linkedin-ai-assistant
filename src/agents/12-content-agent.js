@@ -25,6 +25,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const pool = require('../db/db');
+const twilio = require('twilio');
 
 const PROFILE_FILE = 'data/profile-data.json';
 const OUTPUT_FILE = 'data/post-drafts.json';
@@ -128,22 +129,41 @@ async function main() {
     createdAt: new Date().toISOString(),
   });
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(history, null, 2));
-
   console.log(`Saved to ${OUTPUT_FILE} (${history.length} draft(s) total)`);
 
-  // Also save to the post_drafts table in Supabase
-  await pool.query(
-    'INSERT INTO post_drafts (topic, draft_text) VALUES ($1, $2)',
-    [customTopic || '(based on profile)', draft]
-  );
-  console.log('Draft also saved to post_drafts table in Supabase.');
+  // Generate short topic using Gemini
+  const topicResponse = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{ text: `Give a 3-5 word topic/title for this LinkedIn post. Only reply with the topic, nothing else.\n\n${draft}` }]
+      }]
+    })
+  });
+  const topicData = await topicResponse.json();
+  const topic = topicData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '(based on profile)';
 
-  console.log('\nReview and edit this before posting - copy it into LinkedIn manually when ready.');
+  const insertResult = await pool.query(
+    'INSERT INTO post_drafts (topic, draft_text, approved, posted) VALUES ($1, $2, FALSE, FALSE) RETURNING id',
+    [topic, draft]
+  );
+  const postId = insertResult.rows[0].id;
+  console.log('Draft saved to post_drafts table.');
+
+  // Send WhatsApp notification
+  const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+  await twilioClient.messages.create({
+    from: process.env.TWILIO_WHATSAPP_FROM,
+    to: `whatsapp:${process.env.TWILIO_WHATSAPP_TO}`,
+    body: `📝 *New LinkedIn Post Draft* (ID: ${postId})\nTopic: ${customTopic || '(based on profile)'}\n\n${draft}\n\nReply *approve ${customTopic || 'post'}* to approve or *skip ${customTopic || 'post'}* to reject.`
+  });
+  console.log('📱 Draft sent for approval on WhatsApp.');
 
   await pool.end();
 }
 
 main().catch((err) => {
-  console.error('Something went wrong:', err);
+  console.error('Error:', err.message);
   process.exit(1);
 });

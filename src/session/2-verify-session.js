@@ -1,5 +1,5 @@
 /**
- * STEP 2: Verify saved session works
+ * Verify saved session works
  *
  * What this does:
  * - Opens a new browser using the auth.json session saved in step 1

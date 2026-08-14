@@ -26,28 +26,35 @@ const AUTH_FILE = 'data/auth.json';
 const OUTPUT_FILE = 'data/suggested-connections.json';
 
 async function extractSuggestions(page) {
-  return page.evaluate(() => {
+  // Remove the temporary headings debug log now that we know the heading text
+
+  const results = await page.evaluate(() => {
+    const links = [...document.querySelectorAll('a[href*="/in/"]')];
+    const seen = new Set();
     const results = [];
 
-    // Real selector found via DevTools inspection: suggestion cards use
-    // a componentkey starting with "auto-component-". Each card has two
-    // <p> tags in order: name first, then headline. No real profile link
-    // exists in the HTML (LinkedIn handles navigation via JS click
-    // handler here), so profileUrl stays null.
-    const cards = document.querySelectorAll('[componentkey^="auto-component-"]');
+    links.forEach((link) => {
+      const profileUrl = link.href.split('?')[0];
+      if (seen.has(profileUrl)) return;
+      // Skip nav/header profile links
+      if (link.closest('header, nav, [data-control-name="nav"]')) return;
+      seen.add(profileUrl);
 
-    cards.forEach((card) => {
-      const paragraphs = card.querySelectorAll('p');
-      const name = paragraphs[0] ? paragraphs[0].textContent.trim() : null;
-      const headline = paragraphs[1] ? paragraphs[1].textContent.trim() : null;
+      const container = link.parentElement?.parentElement?.parentElement?.parentElement;
+      if (!container) return;
 
-      if (name) {
-        results.push({ name, headline, profileUrl: null });
-      }
+      const text = container.innerText?.trim();
+      const lines = text?.split('\n').map((l) => l.trim()).filter(Boolean);
+      const name = lines?.[0] || null;
+      const headline = lines?.[1] || null;
+
+      if (name) results.push({ name, headline, profileUrl });
     });
 
     return results;
   });
+
+  return results;
 }
 
 async function main() {
@@ -71,8 +78,7 @@ async function main() {
   });
 
   console.log('Waiting for page to load...');
-  await page.waitForTimeout(4000);
-
+  await page.waitForTimeout(3000);
   let suggestionsMap = new Map();
 
   function mergeIntoMap(snapshot) {
