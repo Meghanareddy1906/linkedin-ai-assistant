@@ -8,12 +8,52 @@ function App() {
   const [connections, setConnections] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [posts, setPosts] = useState([]);
+  const [sentHistory, setSentHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState('');
+  const [regenerating, setRegenerating] = useState({});
+  const [customPrompts, setCustomPrompts] = useState({});
+  const [showPromptInput, setShowPromptInput] = useState({});
+  const [jobSearchKeywords, setJobSearchKeywords] = useState('');
+  const [jobSearchLocation, setJobSearchLocation] = useState('');
+  const [searchingJobs, setSearchingJobs] = useState(false);
+  const [postTopic, setPostTopic] = useState('');
+  const [generatingPost, setGeneratingPost] = useState(false);
+  const [presenceOnline, setPresenceOnline] = useState(true);
+  const [loadingApprove, setLoadingApprove] = useState(null);
 
   useEffect(() => {
     fetchPendingItems();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      fetchSentHistory();
+    }
+  }, [activeTab]);
+
+  // Heartbeat - send presence signal every 30 seconds
+  useEffect(() => {
+    // Send initial heartbeat
+    const sendHeartbeat = async () => {
+      try {
+        await fetch('http://localhost:3001/api/heartbeat', {
+          method: 'POST'
+        });
+      } catch (error) {
+        console.error('Heartbeat failed:', error);
+      }
+    };
+
+    // Send immediately
+    sendHeartbeat();
+
+    // Then every 30 seconds
+    const heartbeatInterval = setInterval(sendHeartbeat, 30000);
+
+    // Cleanup on unmount
+    return () => clearInterval(heartbeatInterval);
+  }, []); // Empty dependency array - runs once on mount
 
   const fetchPendingItems = async () => {
     try {
@@ -29,19 +69,49 @@ function App() {
     }
   };
 
-  const handleApprove = async (type, id) => {
+  const fetchSentHistory = async () => {
     try {
-      await axios.post('http://localhost:3001/api/approve', { type, id });
-      
-      if (type === 'reply') setReplies(replies.filter(item => item.id !== id));
-      if (type === 'connection') setConnections(connections.filter(item => item.id !== id));
-      if (type === 'job') setJobs(jobs.filter(item => item.id !== id));
-      if (type === 'post') setPosts(posts.filter(item => item.id !== id));
-      
-      showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} approved ✓`);
+      const response = await axios.get('http://localhost:3001/api/sent-history');
+      setSentHistory(response.data);
     } catch (error) {
-      console.error(`Error approving ${type}:`, error);
-      showNotification('Failed to approve');
+      console.error('Error fetching sent history:', error);
+    }
+  };
+
+  const handleApprove = async (type, id) => {
+    // Add loading state for this specific item
+    setLoadingApprove({ type, id });
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, id })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Remove from appropriate list
+        if (type === 'reply') {
+          setReplies(replies.filter(r => r.id !== id));
+        } else if (type === 'connection') {
+          setConnections(connections.filter(c => c.id !== id));
+        } else if (type === 'job') {
+          setJobs(jobs.filter(j => j.id !== id));
+        } else if (type === 'post') {
+          setPosts(posts.filter(p => p.id !== id));
+        }
+        
+        showNotification(`✓ ${result.message}`);
+      } else {
+        showNotification(`✗ ${result.message || 'Failed to send'}`);
+      }
+    } catch (error) {
+      console.error('Error approving:', error);
+      showNotification('Failed to approve and send');
+    } finally {
+      setLoadingApprove(null);
     }
   };
 
@@ -60,8 +130,128 @@ function App() {
     }
   };
 
-  const showNotification = (message) => {
+  const handleRegenerate = async (type, id, customPrompt = '') => {
+    setRegenerating(prev => ({ ...prev, [id]: true }));
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, id, customPrompt })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Update the specific item in the correct state
+        if (type === 'reply') {
+          setReplies(prev => prev.map(item =>
+            item.id === id ? { ...item, draft_text: result.newDraft } : item
+          ));
+        } else if (type === 'connection') {
+          setConnections(prev => prev.map(item =>
+            item.id === id ? { ...item, draft_note: result.newDraft } : item
+          ));
+        } else if (type === 'post') {
+          setPosts(prev => prev.map(item =>
+            item.id === id ? { ...item, draft_text: result.newDraft } : item
+          ));
+        }
+        showNotification('Draft regenerated successfully! ✓');
+        // Clear the prompt input
+        setCustomPrompts(prev => ({ ...prev, [id]: '' }));
+        setShowPromptInput(prev => ({ ...prev, [id]: false }));
+      }
+    } catch (error) {
+      console.error('Error regenerating:', error);
+      showNotification('Failed to regenerate draft');
+    } finally {
+      setRegenerating(prev => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const handleJobSearch = async () => {
+    if (!jobSearchKeywords.trim()) {
+      showNotification('Please enter keywords');
+      return;
+    }
+
+    setSearchingJobs(true);
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/jobs/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          keywords: jobSearchKeywords, 
+          location: jobSearchLocation 
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setJobs(result.jobs);
+        showNotification(result.message);
+      } else {
+        showNotification('Search failed');
+      }
+    } catch (error) {
+      console.error('Error searching jobs:', error);
+      showNotification('Failed to search jobs');
+    } finally {
+      setSearchingJobs(false);
+    }
+  };
+
+  const handleGeneratePost = async () => {
+    setGeneratingPost(true);
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/posts/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: postTopic })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Add new post to the top of the list
+        setPosts(prev => [result.post, ...prev]);
+        showNotification(result.message);
+        setPostTopic(''); // Clear input
+      } else {
+        showNotification('Generation failed');
+      }
+    } catch (error) {
+      console.error('Error generating post:', error);
+      showNotification('Failed to generate post');
+    } finally {
+      setGeneratingPost(false);
+    }
+  };
+
+  const checkPresence = async () => {
+    try {
+      const response = await fetch('http://localhost:3001/api/presence');
+      const data = await response.json();
+      setPresenceOnline(data.online);
+    } catch (error) {
+      console.error('Failed to check presence:', error);
+    }
+  };
+
+  useEffect(() => {
+    checkPresence();
+    const presenceInterval = setInterval(checkPresence, 60000); // Check every minute
+    return () => clearInterval(presenceInterval);
+  }, []);
+
+  const showNotification = (message, type = 'info') => {
     setNotification(message);
+    
+    // Add type class to notification element
     setTimeout(() => setNotification(''), 3000);
   };
 
@@ -69,226 +259,564 @@ function App() {
     return <div className="loading">Loading...</div>;
   }
 
+  const stats = {
+    pendingMessages: replies.length,  // Changed from pendingReplies
+    pendingConnections: connections.length,
+    jobMatches: jobs.length,
+    pendingPosts: posts.length
+  };
+
   return (
     <div className="app">
       <header>
-        <h1>LinkedIn Assistant Dashboard</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h1>LinkedIn Assistant Dashboard</h1>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.5rem',
+            fontSize: '0.9rem',
+            color: '#fff'
+          }}>
+            <span style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: presenceOnline ? '#10b981' : '#6b7280'
+            }}></span>
+            {presenceOnline ? 'Active' : 'Inactive'}
+          </div>
+        </div>
       </header>
 
-      <nav className="tabs">
-        <button 
-          className={activeTab === 'replies' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('replies')}
-        >
-          Replies ({replies.length})
-        </button>
-        <button 
-          className={activeTab === 'connections' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('connections')}
-        >
-          Connections ({connections.length})
-        </button>
-        <button 
-          className={activeTab === 'jobs' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('jobs')}
-        >
-          Jobs ({jobs.length})
-        </button>
-        <button 
-          className={activeTab === 'posts' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('posts')}
-        >
-          Posts ({posts.length})
-        </button>
-      </nav>
+      {notification && <div className="notification">{notification}</div>}
 
       <main>
-        {notification && (
-          <div className="notification">{notification}</div>
-        )}
+        {/* Stats Cards Section */}
+        <div className="stats-grid">
+          <div className="stat-card">
+            <h3>Pending Messages</h3>
+            <p className="stat-number">{replies.length}</p>
+          </div>
+          <div className="stat-card">
+            <h3>Pending Connections</h3>
+            <p className="stat-number">{connections.length}</p>
+          </div>
+          <div className="stat-card">
+            <h3>Job Matches</h3>
+            <p className="stat-number">{jobs.length}</p>
+          </div>
+          <div className="stat-card">
+            <h3>Pending Posts</h3>
+            <p className="stat-number">{posts.length}</p>
+          </div>
+        </div>
 
-        {/* REPLIES SECTION */}
-        {activeTab === 'replies' && (
-          <section className="section">
-            <h2>Pending Replies</h2>
-            {replies.length === 0 ? (
-              <p className="empty-state">No pending replies</p>
-            ) : (
-              <div className="cards">
-                {replies.map((reply) => (
-                  <div key={reply.id} className="card">
-                    <div className="card-header">
-                      <h3>{reply.participant_name}</h3>
-                      <span className="timestamp">
-                        {new Date(reply.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="card-body">
-                      <p className="draft-text">{reply.draft_text}</p>
-                    </div>
-                    <div className="card-actions">
-                      <button
-                        className="btn btn-approve"
-                        onClick={() => handleApprove('reply', reply.id)}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="btn btn-reject"
-                        onClick={() => handleReject('reply', reply.id)}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
+        {/* Tabs Navigation */}
+        <nav className="tabs">
+          <button
+            onClick={() => setActiveTab('replies')}
+            className={activeTab === 'replies' ? 'tab active' : 'tab'}
+          >
+            Messages ({replies.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('connections')}
+            className={activeTab === 'connections' ? 'tab active' : 'tab'}
+          >
+            Connections ({connections.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('jobs')}
+            className={activeTab === 'jobs' ? 'tab active' : 'tab'}
+          >
+            Job Search ({jobs.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('posts')}
+            className={activeTab === 'posts' ? 'tab active' : 'tab'}
+          >
+            Generate Post ({posts.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={activeTab === 'history' ? 'tab active' : 'tab'}
+          >
+            Sent History ({sentHistory.length})
+          </button>
+        </nav>
 
-        {/* CONNECTIONS SECTION */}
-        {activeTab === 'connections' && (
-          <section className="section">
-            <h2>Pending Connection Requests</h2>
-            {connections.length === 0 ? (
-              <p className="empty-state">No pending connection requests</p>
-            ) : (
-              <div className="cards">
-                {connections.map((conn) => (
-                  <div key={conn.id} className="card">
-                    <div className="card-header">
-                      <h3>{conn.name}</h3>
-                      <span className="timestamp">
-                        {new Date(conn.drafted_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="card-body">
-                      <p className="headline">{conn.headline}</p>
-                      {conn.profile_url && (
-                        <a 
-                          href={conn.profile_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="profile-link"
-                        >
-                          View Profile →
-                        </a>
-                      )}
-                      {conn.draft_note && (
-                        <div className="note-section">
-                          <strong>Connection Note:</strong>
-                          <p className="draft-text">{conn.draft_note}</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="card-actions">
-                      <button
-                        className="btn btn-approve"
-                        onClick={() => handleApprove('connection', conn.id)}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="btn btn-reject"
-                        onClick={() => handleReject('connection', conn.id)}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* JOBS SECTION */}
-        {activeTab === 'jobs' && (
-          <section className="section">
-            <h2>Job Matches (Score ≥ 70)</h2>
-            {jobs.length === 0 ? (
-              <p className="empty-state">No job matches found</p>
-            ) : (
-              <div className="cards">
-                {jobs.map((job) => (
-                  <div key={job.id} className="card">
-                    <div className="card-header">
-                      <h3>{job.title}</h3>
-                      <span className="match-score">
-                        {job.match_score}% Match
-                      </span>
-                    </div>
-                    <div className="card-body">
-                      <p className="company">{job.company}</p>
-                      {job.job_url && (
-                        <a 
-                          href={job.job_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="profile-link"
-                        >
-                          View Job →
-                        </a>
-                      )}
-                    </div>
-                    <div className="card-actions">
-                      <button
-                        className="btn btn-approve"
-                        onClick={() => handleApprove('job', job.id)}
-                      >
-                        Approve
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* POSTS SECTION */}
-        {activeTab === 'posts' && (
-          <section className="section">
-            <h2>Pending Posts</h2>
-            {posts.length === 0 ? (
-              <p className="empty-state">No pending posts</p>
-            ) : (
-              <div className="cards">
-                {posts.map((post) => (
-                  <div key={post.id} className="card">
-                    <div className="card-header">
-                      <h3>{post.topic}</h3>
-                      <span className="timestamp">
-                        {new Date(post.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="card-body">
-                      <p className="draft-text">{post.draft_text}</p>
-                    </div>
-                    <div className="card-actions">
-                      <button
-                        className="btn btn-approve"
-                        onClick={() => handleApprove('post', post.id)}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="btn btn-reject"
-                        onClick={() => handleReject('post', post.id)}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
+        {/* Tab Content */}
+        <div className="tab-content">
+          {activeTab === 'replies' && (
+            <MessageReplyTab  
+              replies={replies} 
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onRegenerate={handleRegenerate}
+              regenerating={regenerating}
+              customPrompts={customPrompts}
+              showPromptInput={showPromptInput}
+              setCustomPrompts={setCustomPrompts}
+              setShowPromptInput={setShowPromptInput}
+              loadingApprove={loadingApprove}
+            />
+          )}
+          {activeTab === 'connections' && (
+            <ConnectionRequestTab 
+              connections={connections} 
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onRegenerate={handleRegenerate}
+              regenerating={regenerating}
+              customPrompts={customPrompts}
+              showPromptInput={showPromptInput}
+              setCustomPrompts={setCustomPrompts}
+              setShowPromptInput={setShowPromptInput}
+              loadingApprove={loadingApprove}
+            />
+          )}
+          {activeTab === 'jobs' && (
+            <JobSearchTab 
+              jobs={jobs}
+              keywords={jobSearchKeywords}
+              location={jobSearchLocation}
+              onKeywordsChange={setJobSearchKeywords}
+              onLocationChange={setJobSearchLocation}
+              onSearch={handleJobSearch}
+              searching={searchingJobs}
+              onApprove={handleApprove}
+              loadingApprove={loadingApprove}
+            />
+          )}
+          {activeTab === 'posts' && (
+            <ContentPostTab 
+              posts={posts}
+              topic={postTopic}
+              onTopicChange={setPostTopic}
+              onGenerate={handleGeneratePost}
+              generating={generatingPost}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onRegenerate={handleRegenerate}
+              regenerating={regenerating}
+              customPrompts={customPrompts}
+              showPromptInput={showPromptInput}
+              setCustomPrompts={setCustomPrompts}
+              setShowPromptInput={setShowPromptInput}
+              loadingApprove={loadingApprove}
+            />
+          )}
+          {activeTab === 'history' && <HistoryTab history={sentHistory} />}
+        </div>
       </main>
     </div>
   );
 }
+
+
+const MessageReplyTab = ({ 
+  replies, 
+  onApprove, 
+  onReject,
+  onRegenerate,
+  regenerating,
+  customPrompts,
+  showPromptInput,
+  setCustomPrompts,
+  setShowPromptInput,
+  loadingApprove 
+}) => (
+  <section className="section">
+    <h2>Pending Messages</h2>
+    {replies.length === 0 ? (
+      <p className="empty-state">No pending messages</p>
+    ) : (
+      <div className="cards">
+        {replies.map((reply) => (
+          <div key={reply.id} className="card">
+            <div className="card-header">
+              <h3>Reply to {reply.participant_name || 'Unknown'}</h3>
+              <span className="date">
+                {new Date(reply.created_at).toLocaleDateString()}
+              </span>
+            </div>
+            <div className="card-body">
+              <p className="draft-text">{reply.draft_text}</p>
+            </div>
+            <div className="card-actions">
+              <button
+                className="btn btn-approve"
+                onClick={() => onApprove('reply', reply.id)}
+                disabled={loadingApprove?.type === 'reply' && loadingApprove?.id === reply.id}
+              >
+                {loadingApprove?.type === 'reply' && loadingApprove?.id === reply.id 
+                  ? 'Sending...' 
+                  : 'Approve & Send'}
+              </button>
+              <button 
+                className="btn btn-regenerate"
+                onClick={() => setShowPromptInput(prev => ({ ...prev, [reply.id]: !prev[reply.id] }))}
+                disabled={regenerating[reply.id]}
+              >
+                {regenerating[reply.id] ? 'Regenerating...' : 'Regenerate'}
+              </button>
+              <button 
+                className="btn btn-reject"
+                onClick={() => onReject('reply', reply.id)}
+              >
+                Reject
+              </button>
+            </div>
+            {showPromptInput[reply.id] && (
+              <div className="custom-prompt-section">
+                <input
+                  type="text"
+                  className="custom-prompt-input"
+                  placeholder="Optional: Add custom instructions..."
+                  value={customPrompts[reply.id] || ''}
+                  onChange={(e) => setCustomPrompts(prev => ({ ...prev, [reply.id]: e.target.value }))}
+                />
+                <button 
+                  className="btn btn-regenerate-confirm"
+                  onClick={() => onRegenerate('reply', reply.id, customPrompts[reply.id])}
+                  disabled={regenerating[reply.id]}
+                >
+                  Confirm
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+);
+
+const ConnectionRequestTab = ({ 
+  connections, 
+  onApprove, 
+  onReject,
+  onRegenerate,
+  regenerating,
+  customPrompts,
+  showPromptInput,
+  setCustomPrompts,
+  setShowPromptInput,
+  loadingApprove 
+}) => (
+  <section className="section">
+    <h2>Pending Connections</h2>
+    {connections.length === 0 ? (
+      <p className="empty-state">No pending connections</p>
+    ) : (
+      <div className="cards">
+        {connections.map((connection) => (
+          <div key={connection.id} className="card">
+            <div className="card-header">
+              <h3>{connection.name}</h3>
+              <span className="date">
+                {new Date(connection.drafted_at).toLocaleDateString()}
+              </span>
+            </div>
+            <div className="card-body">
+              <p className="headline">{connection.headline}</p>
+              {connection.profile_url && (
+                <a 
+                  href={connection.profile_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="profile-link"
+                >
+                  View Profile →
+                </a>
+              )}
+              {connection.draft_note && (
+                <div className="draft-note">
+                  <strong>Connection Note:</strong>
+                  <p>{connection.draft_note}</p>
+                </div>
+              )}
+            </div>
+            <div className="card-actions">
+              <button
+                className="btn btn-approve"
+                onClick={() => onApprove('connection', connection.id)}
+                disabled={loadingApprove?.type === 'connection' && loadingApprove?.id === connection.id}
+              >
+                {loadingApprove?.type === 'connection' && loadingApprove?.id === connection.id 
+                  ? 'Sending...' 
+                  : 'Approve & Send'}
+              </button>
+              <button 
+                className="btn btn-regenerate"
+                onClick={() => setShowPromptInput(prev => ({ ...prev, [connection.id]: !prev[connection.id] }))}
+                disabled={regenerating[connection.id]}
+              >
+                {regenerating[connection.id] ? 'Regenerating...' : 'Regenerate Note'}
+              </button>
+              <button 
+                className="btn btn-reject"
+                onClick={() => onReject('connection', connection.id)}
+              >
+                Reject
+              </button>
+            </div>
+            {showPromptInput[connection.id] && (
+              <div className="custom-prompt-section">
+                <input
+                  type="text"
+                  className="custom-prompt-input"
+                  placeholder="Optional: Add custom instructions..."
+                  value={customPrompts[connection.id] || ''}
+                  onChange={(e) => setCustomPrompts(prev => ({ ...prev, [connection.id]: e.target.value }))}
+                />
+                <button 
+                  className="btn btn-regenerate-confirm"
+                  onClick={() => onRegenerate('connection', connection.id, customPrompts[connection.id])}
+                  disabled={regenerating[connection.id]}
+                >
+                  Confirm
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+);
+
+const JobSearchTab = ({ jobs, keywords, location, onKeywordsChange, onLocationChange, onSearch, searching, onApprove, loadingApprove }) => (
+  <section className="section">
+    <h2>Job Search</h2>
+    
+    {/* Search Form */}
+    <div className="search-form">
+      <div className="search-inputs">
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Keywords (e.g., Software Engineer, Product Manager)"
+          value={keywords}
+          onChange={(e) => onKeywordsChange(e.target.value)}
+        />
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Location (e.g., San Francisco, Remote)"
+          value={location}
+          onChange={(e) => onLocationChange(e.target.value)}
+        />
+        <button
+          className="btn btn-search"
+          onClick={onSearch}
+          disabled={searching}
+        >
+          {searching ? 'Searching...' : 'Search'}
+        </button>
+      </div>
+    </div>
+
+    {/* Job Results */}
+    {jobs.length === 0 ? (
+      <p className="empty-state">No job matches. Try searching above.</p>
+    ) : (
+      <div className="cards">
+        {jobs.map((job) => (
+          <div key={job.id} className="card">
+            <div className="card-header">
+              <div>
+                <h3>{job.job_title || job.title || 'Job Title Not Available'}</h3>
+                <p className="company-name">{job.company_name || job.company || 'Company Not Listed'}</p>
+                <p className="job-location">📍 {job.location || 'Location not specified'}</p>
+              </div>
+              <span className="match-badge">{job.match_score}% Match</span>
+            </div>
+            <div className="card-body">
+              {job.job_url && (
+                <a 
+                  href={job.job_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="job-link"
+                >
+                  View Job →
+                </a>
+              )}
+            </div>
+            <div className="card-actions">
+              <button
+                className="btn btn-approve"
+                onClick={() => onApprove('job', job.id)}
+                disabled={loadingApprove?.type === 'job' && loadingApprove?.id === job.id}
+              >
+                {loadingApprove?.type === 'job' && loadingApprove?.id === job.id 
+                  ? 'Marking...' 
+                  : 'Mark as Applied'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+);
+
+const ContentPostTab = ({ 
+  posts, 
+  topic,
+  onTopicChange,
+  onGenerate, 
+  generating, 
+  onApprove,
+  onReject,
+  onRegenerate,
+  regenerating,
+  customPrompts,
+  showPromptInput,
+  setCustomPrompts,
+  setShowPromptInput,
+  loadingApprove 
+}) => (
+  <section className="section">
+    <h2>Generate Post</h2>
+    
+    {/* Generation Form */}
+    <div className="search-form">
+      <div className="search-inputs">
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Optional: Enter a topic (or leave blank for profile-based post)"
+          value={topic}
+          onChange={(e) => onTopicChange(e.target.value)}
+        />
+        <button
+          className="btn btn-search"
+          onClick={onGenerate}
+          disabled={generating}
+        >
+          {generating ? 'Generating...' : 'Generate'}
+        </button>
+      </div>
+      <p className="form-hint">
+        Leave topic blank to generate a post based on your profile and experience
+      </p>
+    </div>
+
+    {/* Post Drafts */}
+    {posts.length === 0 ? (
+      <p className="empty-state">No pending posts. Generate one above!</p>
+    ) : (
+      <div className="cards">
+        {posts.map((post) => (
+          <div key={post.id} className="card">
+            <div className="card-header">
+              <h3>{post.topic}</h3>
+              <span className="date">
+                {new Date(post.created_at).toLocaleDateString()}
+              </span>
+            </div>
+            <div className="card-body">
+              <p className="draft-text">{post.draft_text}</p>
+            </div>
+            <div className="card-actions">
+              <button
+                className="btn btn-approve"
+                onClick={() => onApprove('post', post.id)}
+                disabled={loadingApprove?.type === 'post' && loadingApprove?.id === post.id}
+              >
+                {loadingApprove?.type === 'post' && loadingApprove?.id === post.id 
+                  ? 'Publishing...' 
+                  : 'Approve & Publish'}
+              </button>
+              <button 
+                className="btn btn-regenerate"
+                onClick={() => setShowPromptInput(prev => ({ ...prev, [post.id]: !prev[post.id] }))}
+                disabled={regenerating[post.id]}
+              >
+                {regenerating[post.id] ? 'Regenerating...' : 'Regenerate'}
+              </button>
+              <button 
+                className="btn btn-reject"
+                onClick={() => onReject('post', post.id)}
+              >
+                Reject
+              </button>
+            </div>
+            {showPromptInput[post.id] && (
+              <div className="custom-prompt-section">
+                <input
+                  type="text"
+                  className="custom-prompt-input"
+                  placeholder="Optional: Add custom instructions..."
+                  value={customPrompts[post.id] || ''}
+                  onChange={(e) => setCustomPrompts(prev => ({ ...prev, [post.id]: e.target.value }))}
+                />
+                <button 
+                  className="btn btn-regenerate-confirm"
+                  onClick={() => onRegenerate('post', post.id, customPrompts[post.id])}
+                  disabled={regenerating[post.id]}
+                >
+                  Confirm
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+);
+
+const HistoryTab = ({ history }) => (
+  <section className="section">
+    <h2>Sent History</h2>
+    {history.length === 0 ? (
+      <p className="empty-state">No sent items yet</p>
+    ) : (
+      <div className="cards">
+        {history.map((item, index) => (
+          <div key={index} className="card">
+            <div className="card-header">
+              <div>
+                <h3>
+                  {item.type === 'reply' && `Message to ${item.participant_name || 'Unknown'}`}
+                  {item.type === 'connection' && `Connection: ${item.name || 'Unknown'}`}
+                  {item.type === 'post' && `Post: ${item.topic || 'Untitled'}`}
+                  {item.type === 'job' && `Job Application`}
+                </h3>
+                {item.type === 'connection' && item.headline && (
+                  <p className="headline">{item.headline}</p>
+                )}
+                {item.type === 'job' && item.job_title && (
+                  <p className="company-name">
+                    {item.job_title} at {item.company_name || 'Unknown Company'}
+                  </p>
+                )}
+              </div>
+              <span className="date">
+                {new Date(item.sent_at).toLocaleDateString()}
+              </span>
+            </div>
+            <div className="card-body">
+              {item.type === 'reply' && (
+                <p className="draft-text">{item.draft_text}</p>
+              )}
+              {item.type === 'connection' && item.draft_note && (
+                <p className="draft-text">{item.draft_note}</p>
+              )}
+              {item.type === 'post' && (
+                <p className="draft-text">{item.draft_text}</p>
+              )}
+            </div>
+            <div className="sent-badge">✓ Sent</div>
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+);
 
 export default App;

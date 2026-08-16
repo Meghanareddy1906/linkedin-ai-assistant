@@ -3,20 +3,11 @@
  *
  * What this does:
  * - Reuses your saved auth.json session
- * - Searches LinkedIn Jobs for a set of keyword queries (defined below)
+ * - Searches LinkedIn Jobs for keywords passed as command-line arguments
  * - Extracts job listings: title, company, location, posted date, link
  * - Saves combined, deduplicated results to data/job-search-results.json
  *
- * This is READ-ONLY. It does not click "Apply", "Save", or anything else
- * that changes state - it only reads what's displayed in search results.
- *
- * NOTE: Based on lessons learned from the profile and network scrapers,
- * this is built from the start to scroll the inner <main> container
- * (not the window) and extract data on every scroll step, since that's
- * been the pattern LinkedIn uses consistently. If selectors still don't
- * match, we'll do the same DevTools inspection process as before.
- *
- * Run with: node src/scrapers/10-read-job-search.js
+ * Run with: node src/scrapers/10-read-job-search.js "Software Engineer" "San Francisco"
  */
 
 const { chromium } = require('playwright');
@@ -25,10 +16,13 @@ const fs = require('fs');
 const AUTH_FILE = 'data/auth.json';
 const OUTPUT_FILE = 'data/job-search-results.json';
 
-// Search queries to run - each is a separate LinkedIn Jobs search
+// Get keywords and location from command-line arguments
+const keywords = process.argv[2] || 'Software Engineer';
+const location = process.argv[3] || 'India';
+
+// Single search query from the dashboard
 const SEARCHES = [
-  { keywords: 'Software Engineer', location: 'India' },
-  { keywords: 'AI ML Engineer', location: 'India' },
+  { keywords: keywords, location: location },
 ];
 
 function buildSearchUrl(keywords, location) {
@@ -43,18 +37,11 @@ async function extractJobCards(page) {
   return page.evaluate(() => {
     const results = [];
 
-    // Best-guess selector based on LinkedIn's typical job card structure.
-    // Likely needs adjustment via DevTools inspection, same as previous
-    // scrapers if this comes back empty.
     const cards = document.querySelectorAll(
       '[data-testid*="job-card"], li[componentkey^="entity-collection-item-"], .job-card-container'
     );
 
     cards.forEach((card) => {
-      // This jobs search page uses LinkedIn's older "Artdeco" design
-      // system with stable, semantic class names (unlike the hashed
-      // classes on profile/messaging/network pages) - confirmed via
-      // diagnostic output showing classes like "artdeco-entity-lockup__*"
       const titleEl = card.querySelector(
         '.job-card-list__title, .artdeco-entity-lockup__title, a[href*="/jobs/view/"]'
       );
@@ -129,7 +116,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('Launching browser with saved session...');
+  console.log(`Launching browser with saved session...`);
+  console.log(`Searching for: "${keywords}" in "${location}"`);
+  
   const browser = await chromium.launch({ headless: false });
   const context = await browser.newContext({
     storageState: AUTH_FILE,
@@ -154,8 +143,7 @@ async function main() {
     console.log('\n⚠️  No jobs captured. Taking a screenshot for debugging...');
     try {
       await page.screenshot({ path: 'data/debug-screenshot.png', fullPage: true, timeout: 10000 });
-      console.log('Check data/debug-screenshot.png - we likely need to inspect the');
-      console.log('actual HTML structure together, same process as before.');
+      console.log('Check data/debug-screenshot.png');
     } catch (err) {
       console.log('(Screenshot also timed out - not critical, continuing.)');
     }
