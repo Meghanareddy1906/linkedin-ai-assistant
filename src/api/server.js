@@ -5,6 +5,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const fs = require('fs');
 const { sendReplyById, sendConnectionById, sendPostById } = require('../executor/send-actions');
+const jwt = require('jsonwebtoken'); // ADD THIS LINE
 
 const app = express();
 const PORT = 3001;
@@ -577,6 +578,18 @@ app.post('/api/dismiss', async (req, res) => {
 // Get sent history
 app.get('/api/sent-history', (req, res) => {
   res.json(sentHistory);
+});
+
+// Login endpoint - ADD THIS WHOLE BLOCK
+app.post('/api/login', (req, res) => {
+  const { password } = req.body;
+  
+  if (password === process.env.DASHBOARD_PASSWORD) {
+    const token = jwt.sign({ user: 'dashboard' }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    return res.json({ success: true, token });
+  }
+  
+  res.status(401).json({ success: false, message: 'Invalid password' });
 });
 
 app.listen(PORT, () => {

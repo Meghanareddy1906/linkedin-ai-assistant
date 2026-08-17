@@ -1,8 +1,36 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
+import Login from './components/Login';
 
 function App() {
+  // ADD AUTHENTICATION STATE AT THE TOP
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isChecking, setIsChecking] = useState(true);
+
+  // CHECK AUTHENTICATION ON MOUNT
+  useEffect(() => {
+    const token = localStorage.getItem('dashboardToken');
+    setIsAuthenticated(!!token);
+    setIsChecking(false);
+  }, []);
+
+  // SHOW LOADING WHILE CHECKING AUTH
+  if (isChecking) {
+    return <div className="loading">Checking authentication...</div>;
+  }
+
+  // SHOW LOGIN PAGE IF NOT AUTHENTICATED
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
+  // IF AUTHENTICATED, RENDER THE DASHBOARD
+  return <Dashboard />;
+}
+
+// MOVE ALL EXISTING CODE INTO A DASHBOARD COMPONENT
+function Dashboard() {
   const [activeTab, setActiveTab] = useState('replies');
   const [replies, setReplies] = useState([]);
   const [connections, setConnections] = useState([]);
@@ -32,9 +60,7 @@ function App() {
     }
   }, [activeTab]);
 
-  // Heartbeat - send presence signal every 30 seconds
   useEffect(() => {
-    // Send initial heartbeat
     const sendHeartbeat = async () => {
       try {
         await fetch('http://localhost:3001/api/heartbeat', {
@@ -45,15 +71,10 @@ function App() {
       }
     };
 
-    // Send immediately
     sendHeartbeat();
-
-    // Then every 30 seconds
     const heartbeatInterval = setInterval(sendHeartbeat, 30000);
-
-    // Cleanup on unmount
     return () => clearInterval(heartbeatInterval);
-  }, []); // Empty dependency array - runs once on mount
+  }, []);
 
   const fetchPendingItems = async () => {
     try {
@@ -79,7 +100,6 @@ function App() {
   };
 
   const handleApprove = async (type, id) => {
-    // Add loading state for this specific item
     setLoadingApprove({ type, id });
     
     try {
@@ -92,7 +112,6 @@ function App() {
       const result = await response.json();
       
       if (result.success) {
-        // Remove from appropriate list
         if (type === 'reply') {
           setReplies(replies.filter(r => r.id !== id));
         } else if (type === 'connection') {
@@ -143,7 +162,6 @@ function App() {
       const result = await response.json();
       
       if (result.success) {
-        // Update the specific item in the correct state
         if (type === 'reply') {
           setReplies(prev => prev.map(item =>
             item.id === id ? { ...item, draft_text: result.newDraft } : item
@@ -158,7 +176,6 @@ function App() {
           ));
         }
         showNotification('Draft regenerated successfully! ✓');
-        // Clear the prompt input
         setCustomPrompts(prev => ({ ...prev, [id]: '' }));
         setShowPromptInput(prev => ({ ...prev, [id]: false }));
       }
@@ -217,10 +234,9 @@ function App() {
       const result = await response.json();
       
       if (result.success) {
-        // Add new post to the top of the list
         setPosts(prev => [result.post, ...prev]);
         showNotification(result.message);
-        setPostTopic(''); // Clear input
+        setPostTopic('');
       } else {
         showNotification('Generation failed');
       }
@@ -244,15 +260,19 @@ function App() {
 
   useEffect(() => {
     checkPresence();
-    const presenceInterval = setInterval(checkPresence, 60000); // Check every minute
+    const presenceInterval = setInterval(checkPresence, 60000);
     return () => clearInterval(presenceInterval);
   }, []);
 
   const showNotification = (message, type = 'info') => {
     setNotification(message);
-    
-    // Add type class to notification element
     setTimeout(() => setNotification(''), 3000);
+  };
+
+  // ADD LOGOUT HANDLER
+  const handleLogout = () => {
+    localStorage.removeItem('dashboardToken');
+    window.location.reload();
   };
 
   if (loading) {
@@ -271,20 +291,37 @@ function App() {
       <header>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h1>LinkedIn Assistant Dashboard</h1>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '0.5rem',
-            fontSize: '0.9rem',
-            color: '#fff'
-          }}>
-            <span style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: presenceOnline ? '#10b981' : '#6b7280'
-            }}></span>
-            {presenceOnline ? 'Active' : 'Inactive'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem',
+              fontSize: '0.9rem',
+              color: '#fff'
+            }}>
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: presenceOnline ? '#10b981' : '#6b7280'
+              }}></span>
+              {presenceOnline ? 'Active' : 'Inactive'}
+            </div>
+            {/* ADD LOGOUT BUTTON */}
+            <button 
+              onClick={handleLogout}
+              style={{
+                background: '#dc3545',
+                color: 'white',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontWeight: '500'
+              }}
+            >
+              Logout
+            </button>
           </div>
         </div>
       </header>
@@ -292,7 +329,6 @@ function App() {
       {notification && <div className="notification">{notification}</div>}
 
       <main>
-        {/* Stats Cards Section */}
         <div className="stats-grid">
           <div className="stat-card">
             <h3>Pending Messages</h3>
@@ -312,7 +348,6 @@ function App() {
           </div>
         </div>
 
-        {/* Tabs Navigation */}
         <nav className="tabs">
           <button
             onClick={() => setActiveTab('replies')}
@@ -346,7 +381,6 @@ function App() {
           </button>
         </nav>
 
-        {/* Tab Content */}
         <div className="tab-content">
           {activeTab === 'replies' && (
             <MessageReplyTab  
@@ -414,7 +448,7 @@ function App() {
   );
 }
 
-
+// ALL TAB COMPONENTS STAY EXACTLY THE SAME
 const MessageReplyTab = ({ 
   replies, 
   onApprove, 
@@ -591,7 +625,6 @@ const JobSearchTab = ({ jobs, keywords, location, onKeywordsChange, onLocationCh
   <section className="section">
     <h2>Job Search</h2>
     
-    {/* Search Form */}
     <div className="search-form">
       <div className="search-inputs">
         <input
@@ -618,7 +651,6 @@ const JobSearchTab = ({ jobs, keywords, location, onKeywordsChange, onLocationCh
       </div>
     </div>
 
-    {/* Job Results */}
     {jobs.length === 0 ? (
       <p className="empty-state">No job matches. Try searching above.</p>
     ) : (
@@ -682,7 +714,6 @@ const ContentPostTab = ({
   <section className="section">
     <h2>Generate Post</h2>
     
-    {/* Generation Form */}
     <div className="search-form">
       <div className="search-inputs">
         <input
@@ -705,7 +736,6 @@ const ContentPostTab = ({
       </p>
     </div>
 
-    {/* Post Drafts */}
     {posts.length === 0 ? (
       <p className="empty-state">No pending posts. Generate one above!</p>
     ) : (
