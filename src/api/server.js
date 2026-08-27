@@ -6,6 +6,7 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const { sendReplyById, sendConnectionById, sendPostById } = require('../executor/send-actions');
 const jwt = require('jsonwebtoken'); // ADD THIS LINE
+const statusRoutes = require('./routes/status');
 
 const app = express();
 const PORT = 3001;
@@ -576,11 +577,65 @@ app.post('/api/dismiss', async (req, res) => {
 });
 
 // Get sent history
-app.get('/api/sent-history', (req, res) => {
-  res.json(sentHistory);
+app.get('/api/sent-history', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT * FROM (
+        SELECT 
+          'message' as type,
+          dr.id,
+          c.participant_name,
+          dr.draft_text,
+          COALESCE(dr.sent_at, dr.created_at) as sent_at
+        FROM drafted_replies dr
+        JOIN conversations c ON dr.conversation_id = c.id
+        WHERE dr.sent = TRUE
+        
+        UNION ALL
+        
+        SELECT 
+          'connection' as type,
+          id,
+          name as participant_name,
+          draft_note as draft_text,
+          COALESCE(sent_at, created_at) as sent_at
+        FROM connections
+        WHERE sent = TRUE
+        
+        UNION ALL
+        
+        SELECT 
+          'post' as type,
+          id,
+          topic as participant_name,
+          draft_text,
+          COALESCE(sent_at, created_at) as sent_at
+        FROM post_drafts
+        WHERE posted = TRUE
+        
+        UNION ALL
+        
+        SELECT 
+          'job' as type,
+          id,
+          title as participant_name,
+          company as draft_text,
+          created_at as sent_at
+        FROM jobs
+        WHERE approved = TRUE
+      ) AS combined_results
+      ORDER BY sent_at DESC NULLS LAST
+      LIMIT 100
+    `);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching sent history:', error);
+    res.status(500).json({ error: 'Failed to fetch sent history' });
+  }
 });
 
-// Login endpoint - ADD THIS WHOLE BLOCK
+// Login endpoint
 app.post('/api/login', (req, res) => {
   const { password } = req.body;
   
@@ -591,6 +646,181 @@ app.post('/api/login', (req, res) => {
   
   res.status(401).json({ success: false, message: 'Invalid password' });
 });
+
+// Middleware to authenticate JWT token
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'No token provided' });
+  }
+  
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ success: false, message: 'Invalid or expired token' });
+    }
+    
+    req.user = user;
+    next();
+  });
+}
+
+// GET settings - ADD AUTH MIDDLEWARE
+app.get('/api/settings', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM target_settings LIMIT 1');
+    
+    if (result.rows.length === 0) {
+      // Create default settings if none exist
+      const insertResult = await pool.query(`
+        INSERT INTO target_settings (target_connections_period, target_connections_count, target_posts_period, target_posts_count)
+        VALUES ('weekly', 5, 'weekly', 2)
+        RETURNING *
+      `);
+      return res.json(insertResult.rows[0]);
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    console.error('Full error details:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch settings', details: error.message });
+  }
+});
+
+// POST settings (update) - ADD AUTH MIDDLEWARE AND BETTER ERROR HANDLING
+app.post('/api/settings', authenticateToken, async (req, res) => {
+  try {
+    const {
+      target_connections_period,
+      target_connections_count,
+      target_posts_period,
+      target_posts_count
+    } = req.body;
+
+    console.log('Received settings update:', req.body);
+
+    // Validate inputs
+    if (!['daily', 'weekly'].includes(target_connections_period)) {
+      return res.status(400).json({ error: 'Invalid connections period' });
+    }
+    if (!['daily', 'weekly'].includes(target_posts_period)) {
+      return res.status(400).json({ error: 'Invalid posts period' });
+    }
+    if (target_connections_count < 0 || target_posts_count < 0) {
+      return res.status(400).json({ error: 'Counts must be non-negative' });
+    }
+
+    // Check if settings row exists
+    const existingSettings = await pool.query('SELECT id FROM target_settings LIMIT 1');
+    
+    let result;
+    
+    if (existingSettings.rows.length === 0) {
+      // No settings exist, INSERT a new row
+      console.log('No settings found, inserting new row...');
+      result = await pool.query(`
+        INSERT INTO target_settings (target_connections_period, target_connections_count, target_posts_period, target_posts_count)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+      `, [target_connections_period, target_connections_count, target_posts_period, target_posts_count]);
+    } else {
+      // Settings exist, UPDATE the existing row
+      console.log('Updating existing settings...');
+      result = await pool.query(`
+        UPDATE target_settings 
+        SET target_connections_period = $1,
+            target_connections_count = $2,
+            target_posts_period = $3,
+            target_posts_count = $4,
+            updated_at = NOW()
+        WHERE id = $5
+        RETURNING *
+      `, [target_connections_period, target_connections_count, target_posts_period, target_posts_count, existingSettings.rows[0].id]);
+    }
+
+    console.log('Settings saved successfully:', result.rows[0]);
+    res.json({ success: true, settings: result.rows[0] });
+
+  } catch (error) {
+    console.error('❌ Error updating settings:', error);
+    console.error('Full error details:', error.message, error.stack);
+    res.status(500).json({ 
+      error: 'Failed to update settings', 
+      details: error.message 
+    });
+  }
+});
+
+// GET progress for targets - ADD AUTH MIDDLEWARE
+app.get('/api/targets/progress', authenticateToken, async (req, res) => {
+  try {
+    const settings = await pool.query('SELECT * FROM target_settings LIMIT 1');
+    
+    if (settings.rows.length === 0) {
+      return res.json({
+        connections: { sent: 0, target: 0, period: 'weekly' },
+        posts: { sent: 0, target: 0, period: 'weekly' }
+      });
+    }
+
+    const config = settings.rows[0];
+    
+    // Calculate date ranges
+    const now = new Date();
+    
+    // Connections period
+    const connStartDate = getPeriodStartDate(now, config.target_connections_period);
+    const connResult = await pool.query(
+      `SELECT COUNT(*) as count FROM connections WHERE sent = TRUE AND sent_at >= $1 AND sent_at <= $2`,
+      [connStartDate, now]
+    );
+
+    // Posts period
+    const postsStartDate = getPeriodStartDate(now, config.target_posts_period);
+    const postsResult = await pool.query(
+      `SELECT COUNT(*) as count FROM post_drafts WHERE posted = TRUE AND sent_at >= $1 AND sent_at <= $2`,
+      [postsStartDate, now]
+    );
+
+    res.json({
+      connections: {
+        sent: parseInt(connResult.rows[0].count),
+        target: config.target_connections_count,
+        period: config.target_connections_period
+      },
+      posts: {
+        sent: parseInt(postsResult.rows[0].count),
+        target: config.target_posts_count,
+        period: config.target_posts_period
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching progress:', error);
+    console.error('Full error details:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch progress', details: error.message });
+  }
+});
+
+// Helper function for date calculation
+function getPeriodStartDate(now, period) {
+  if (period === 'daily') {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+  } else if (period === 'weekly') {
+    const dayOfWeek = now.getDay();
+    const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Monday = start
+    const startDate = new Date(now);
+    startDate.setDate(now.getDate() - diff);
+    startDate.setHours(0, 0, 0, 0);
+    return startDate;
+  }
+  return now;
+}
+
+// Mount status routes
+app.use('/api/status', authenticateToken, statusRoutes);
 
 app.listen(PORT, () => {
   console.log(`API server running on http://localhost:${PORT}`);

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 import Login from './components/Login';
+import TargetsTab from './components/TargetsTab';
+import AccountSettings from './components/AccountSettings';
 
 function App() {
   // ADD AUTHENTICATION STATE AT THE TOP
@@ -92,7 +94,10 @@ function Dashboard() {
 
   const fetchSentHistory = async () => {
     try {
-      const response = await axios.get('http://localhost:3001/api/sent-history');
+      const token = localStorage.getItem('dashboardToken');
+      const response = await axios.get('http://localhost:3001/api/sent-history', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setSentHistory(response.data);
     } catch (error) {
       console.error('Error fetching sent history:', error);
@@ -379,6 +384,19 @@ function Dashboard() {
           >
             Sent History ({sentHistory.length})
           </button>
+          <button
+            onClick={() => setActiveTab('targets')}
+            className={activeTab === 'targets' ? 'tab active' : 'tab'}
+          >
+            Targets
+          </button>
+          {/* ADD THIS NEW BUTTON */}
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={activeTab === 'settings' ? 'tab active' : 'tab'}
+          >
+            Account Settings
+          </button>
         </nav>
 
         <div className="tab-content">
@@ -442,6 +460,8 @@ function Dashboard() {
             />
           )}
           {activeTab === 'history' && <HistoryTab history={sentHistory} />}
+          {activeTab === 'targets' && <TargetsTab />}
+          {activeTab === 'settings' && <AccountSettings onLogout={handleLogout} />}
         </div>
       </main>
     </div>
@@ -812,17 +832,14 @@ const HistoryTab = ({ history }) => (
             <div className="card-header">
               <div>
                 <h3>
-                  {item.type === 'reply' && `Message to ${item.participant_name || 'Unknown'}`}
-                  {item.type === 'connection' && `Connection: ${item.name || 'Unknown'}`}
-                  {item.type === 'post' && `Post: ${item.topic || 'Untitled'}`}
+                  {item.type === 'message' && `Message to ${item.participant_name || 'Unknown'}`}
+                  {item.type === 'connection' && `Connection: ${item.participant_name || 'Unknown'}`}
+                  {item.type === 'post' && `Post: ${item.participant_name || 'Untitled'}`}
                   {item.type === 'job' && `Job Application`}
                 </h3>
-                {item.type === 'connection' && item.headline && (
-                  <p className="headline">{item.headline}</p>
-                )}
-                {item.type === 'job' && item.job_title && (
+                {item.type === 'job' && (
                   <p className="company-name">
-                    {item.job_title} at {item.company_name || 'Unknown Company'}
+                    {item.participant_name || 'Unknown Title'} at {item.draft_text || 'Unknown Company'}
                   </p>
                 )}
               </div>
@@ -831,13 +848,7 @@ const HistoryTab = ({ history }) => (
               </span>
             </div>
             <div className="card-body">
-              {item.type === 'reply' && (
-                <p className="draft-text">{item.draft_text}</p>
-              )}
-              {item.type === 'connection' && item.draft_note && (
-                <p className="draft-text">{item.draft_note}</p>
-              )}
-              {item.type === 'post' && (
+              {(item.type === 'message' || item.type === 'connection' || item.type === 'post') && item.draft_text && (
                 <p className="draft-text">{item.draft_text}</p>
               )}
             </div>

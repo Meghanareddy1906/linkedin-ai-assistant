@@ -667,3 +667,101 @@ main {
 .btn-regenerate:disabled {
   background: #9ca3af;
 }
+
+/* Dark Mode Variables and Styles */
+:root.dark-mode {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #3a3a3a;
+  --text-primary: #e5e5e5;
+  --text-secondary: #b3b3b3;
+  --border-color: #404040;
+  --accent-color: #0a66c2;
+}
+
+:root.dark-mode .App {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+:root.dark-mode .header {
+  background: var(--bg-secondary);
+  border-bottom-color: var(--border-color);
+}
+
+:root.dark-mode .header h1 {
+  color: var(--text-primary);
+}
+
+:root.dark-mode .tabs {
+  background: var(--bg-secondary);
+  border-bottom-color: var(--border-color);
+}
+
+:root.dark-mode .tab {
+  color: var(--text-secondary);
+  border-bottom-color: transparent;
+}
+
+:root.dark-mode .tab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+:root.dark-mode .tab.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+  background: var(--bg-tertiary);
+}
+
+:root.dark-mode .tab-content {
+  background: var(--bg-primary);
+}
+
+/* Apply dark mode to all tabs */
+:root.dark-mode .messages-tab,
+:root.dark-mode .connections-tab,
+:root.dark-mode .jobs-tab,
+:root.dark-mode .posts-tab,
+:root.dark-mode .history-tab,
+:root.dark-mode .targets-tab {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+:root.dark-mode .card,
+:root.dark-mode .draft-card,
+:root.dark-mode .connection-card,
+:root.dark-mode .job-card,
+:root.dark-mode .post-card {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+:root.dark-mode .card h3,
+:root.dark-mode .draft-card h3 {
+  color: var(--text-primary);
+}
+
+:root.dark-mode .card p,
+:root.dark-mode .draft-card p {
+  color: var(--text-secondary);
+}
+
+:root.dark-mode button {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+:root.dark-mode button:hover {
+  background: var(--bg-secondary);
+}
+
+:root.dark-mode input,
+:root.dark-mode textarea,
+:root.dark-mode select {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
