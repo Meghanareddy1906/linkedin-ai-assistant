@@ -406,19 +406,24 @@ main {
 }
 
 .search-input {
-  flex: 1;
-  min-width: 250px;
-  padding: 0.75rem 1rem;
-  border: 1px solid #d1d5db;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #e5e7eb;
   border-radius: 6px;
   font-size: 0.95rem;
-  background: white;
+  font-family: inherit;
 }
 
 .search-input:focus {
   outline: none;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  border-color: #0a66c2;
+  box-shadow: 0 0 0 3px rgba(10, 102, 194, 0.1);
+}
+
+textarea.search-input {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .btn-search {
@@ -440,9 +445,9 @@ main {
 }
 
 .form-hint {
-  margin-top: 0.75rem;
   font-size: 0.85rem;
-  color: #6b7280;
+  color: #666;
+  margin-top: 0.5rem;
   font-style: italic;
 }
 

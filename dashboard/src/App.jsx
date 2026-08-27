@@ -47,7 +47,7 @@ function Dashboard() {
   const [jobSearchKeywords, setJobSearchKeywords] = useState('');
   const [jobSearchLocation, setJobSearchLocation] = useState('');
   const [searchingJobs, setSearchingJobs] = useState(false);
-  const [postTopic, setPostTopic] = useState('');
+  const [postInstructions, setPostInstructions] = useState(''); // Changed from 'postTopic'
   const [generatingPost, setGeneratingPost] = useState(false);
   const [presenceOnline, setPresenceOnline] = useState(true);
   const [loadingApprove, setLoadingApprove] = useState(null);
@@ -233,7 +233,7 @@ function Dashboard() {
       const response = await fetch('http://localhost:3001/api/posts/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: postTopic })
+        body: JSON.stringify({ instructions: postInstructions }) // Changed from 'topic'
       });
       
       const result = await response.json();
@@ -241,7 +241,7 @@ function Dashboard() {
       if (result.success) {
         setPosts(prev => [result.post, ...prev]);
         showNotification(result.message);
-        setPostTopic('');
+        setPostInstructions(''); // Clear after generating
       } else {
         showNotification('Generation failed');
       }
@@ -444,8 +444,8 @@ function Dashboard() {
           {activeTab === 'posts' && (
             <ContentPostTab 
               posts={posts}
-              topic={postTopic}
-              onTopicChange={setPostTopic}
+              instructions={postInstructions}
+              onInstructionsChange={setPostInstructions}
               onGenerate={handleGeneratePost}
               generating={generatingPost}
               onApprove={handleApprove}
@@ -717,8 +717,8 @@ const JobSearchTab = ({ jobs, keywords, location, onKeywordsChange, onLocationCh
 
 const ContentPostTab = ({ 
   posts, 
-  topic,
-  onTopicChange,
+  instructions,
+  onInstructionsChange,
   onGenerate, 
   generating, 
   onApprove,
@@ -735,24 +735,38 @@ const ContentPostTab = ({
     <h2>Generate Post</h2>
     
     <div className="search-form">
-      <div className="search-inputs">
-        <input
-          type="text"
+      <div className="search-inputs" style={{ flexDirection: 'column', gap: '1rem' }}>
+        <textarea
           className="search-input"
-          placeholder="Optional: Enter a topic (or leave blank for profile-based post)"
-          value={topic}
-          onChange={(e) => onTopicChange(e.target.value)}
+          style={{ 
+            minHeight: '120px', 
+            resize: 'vertical',
+            fontFamily: 'inherit',
+            padding: '0.75rem'
+          }}
+          placeholder="Describe what you want to post about and how you want it written...
+
+Examples:
+• Write about my recent internship at Google, keep it casual and under 100 words
+• Write about AI trends in healthcare, formal tone, include a question at the end
+• Share my experience transitioning from academia to industry, authentic voice
+• Discuss the importance of continuous learning, motivational tone, 200-250 words
+
+Leave blank to auto-generate based on your LinkedIn profile."
+          value={instructions}
+          onChange={(e) => onInstructionsChange(e.target.value)}
         />
         <button
           className="btn btn-search"
           onClick={onGenerate}
           disabled={generating}
+          style={{ alignSelf: 'flex-start' }}
         >
-          {generating ? 'Generating...' : 'Generate'}
+          {generating ? 'Generating...' : 'Generate Post'}
         </button>
       </div>
       <p className="form-hint">
-        Leave topic blank to generate a post based on your profile and experience
+        💡 Tip: Be specific about tone (casual/formal), length, and what to include. The AI will follow your instructions exactly.
       </p>
     </div>
 
@@ -763,7 +777,7 @@ const ContentPostTab = ({
         {posts.map((post) => (
           <div key={post.id} className="card">
             <div className="card-header">
-              <h3>{post.topic}</h3>
+              <h3>{post.topic || 'Generated Post'}</h3>
               <span className="date">
                 {new Date(post.created_at).toLocaleDateString()}
               </span>
@@ -797,10 +811,10 @@ const ContentPostTab = ({
             </div>
             {showPromptInput[post.id] && (
               <div className="custom-prompt-section">
-                <input
-                  type="text"
+                <textarea
                   className="custom-prompt-input"
-                  placeholder="Optional: Add custom instructions..."
+                  style={{ minHeight: '80px', resize: 'vertical' }}
+                  placeholder="Add custom instructions for regeneration..."
                   value={customPrompts[post.id] || ''}
                   onChange={(e) => setCustomPrompts(prev => ({ ...prev, [post.id]: e.target.value }))}
                 />

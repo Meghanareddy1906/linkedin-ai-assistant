@@ -344,12 +344,12 @@ app.post('/api/jobs/search', async (req, res) => {
 
 // Post generation endpoint
 app.post('/api/posts/generate', async (req, res) => {
-  const { topic } = req.body;
+  const { instructions } = req.body; // Changed from 'topic' to 'instructions'
 
   try {
-    console.log(`Generating post${topic ? ` about: ${topic}` : ' from profile'}`);
+    console.log(`Generating post with instructions: ${instructions || '(profile-based)'}`);
 
-    // Read profile data for context
+    // Read profile data for personalization context only
     let profileContext = '';
     if (fs.existsSync('data/profile-data.json')) {
       const profile = JSON.parse(fs.readFileSync('data/profile-data.json', 'utf-8'));
@@ -358,55 +358,49 @@ app.post('/api/posts/generate', async (req, res) => {
         : null;
 
       profileContext = [
+        `Name: ${profile.name || 'User'}`,
         profile.headline ? `Headline: ${profile.headline}` : null,
         currentRole ? `Current role: ${currentRole}` : null,
-        profile.about ? `About: ${profile.about.substring(0, 200)}...` : null,
       ]
         .filter(Boolean)
         .join('\n');
     }
 
-    // Generate post content
     let prompt;
-    if (topic) {
-      prompt = `You are a LinkedIn content creator${profileContext ? ` writing for this person:\n${profileContext}\n\n` : '.'}
+    
+    if (instructions && instructions.trim()) {
+      // USER-DRIVEN: Use their instructions as the primary directive
+      prompt = `You are writing a LinkedIn post${profileContext ? ` for:\n${profileContext}\n\n` : '.'}
 
-Create a professional LinkedIn post about: ${topic}
+User's instructions:
+${instructions}
 
-The post should:
-- Be engaging and valuable to your network
-- Use line breaks for readability
-- Be 150-300 words
-- Include a clear takeaway or call to action
-- Sound authentic and conversational
-- Match the person's professional voice
+Write the post exactly as requested. Follow their specifications for:
+- Tone and style (casual, formal, professional, etc.)
+- Length (if specified)
+- Structure and content
+- Any specific elements they want included
 
-IMPORTANT: Never use placeholder text in brackets. Write a complete post ready to publish.
-
-Just provide the post text, no quotes or hashtags unless truly relevant.`;
+Do not add restrictions or rules they didn't ask for. Never use placeholder text in brackets like [X]. Output only the post text itself, ready to publish.`;
     } else {
+      // FALLBACK: Default profile-based generation
       prompt = `You are a LinkedIn content creator${profileContext ? ` writing for this person:\n${profileContext}\n\n` : '.'}
 
-Based on their profile, create an engaging LinkedIn post that shares professional insights, career reflections, or industry observations.
+Based on their profile, create an engaging LinkedIn post that:
+- Shares professional insights, career reflections, or industry observations
+- Is conversational and authentic (150-250 words)
+- Includes a clear takeaway or call-to-action
+- Uses natural line breaks for readability
 
-The post should:
-- Be relevant to their experience and industry
-- Use line breaks for readability
-- Be 150-300 words
-- Include a clear takeaway or call to action
-- Sound authentic and conversational
-
-IMPORTANT: Never use placeholder text in brackets. Write a complete post ready to publish.
-
-Just provide the post text, no quotes or hashtags unless truly relevant.`;
+Write a complete post ready to publish. No placeholder text in brackets.`;
     }
 
     const draftText = await callGemini(prompt);
 
-    // Save to database with approved = FALSE
+    // Save to database
     const result = await pool.query(
       'INSERT INTO post_drafts (topic, draft_text, created_at, approved, posted, dismissed) VALUES ($1, $2, NOW(), FALSE, FALSE, FALSE) RETURNING *',
-      [topic || 'Profile-based post', draftText]
+      [instructions || 'Profile-based post', draftText]
     );
 
     res.json({ 
