@@ -15,15 +15,34 @@ body {
 }
 
 header {
-  background: #0a66c2;
+  background: linear-gradient(135deg, #0a66c2 0%, #004182 100%);
   color: white;
   padding: 1.5rem 2rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 header h1 {
-  font-size: 1.5rem;
+  margin: 0;
+  font-size: 1.75rem;
   font-weight: 600;
+}
+
+.status-indicator {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.85rem;
+  color: #10b981; /* Green color */
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 500;
 }
 
 .tabs {
@@ -391,62 +410,63 @@ main {
 /* Add at the end of your App.css */
 
 .search-form {
-  background-color: #f9fafb;
+  background: #f8f9fa;
   padding: 1.5rem;
   border-radius: 8px;
   margin-bottom: 2rem;
-  border: 1px solid #e5e7eb;
+}
+
+.search-form textarea.search-input {
+  width: 100%;
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.search-form .btn-search {
+  display: block;
+  margin-bottom: 0.75rem;
 }
 
 .search-inputs {
   display: flex;
   gap: 0.75rem;
-  flex-wrap: wrap;
   align-items: center;
+  margin-bottom: 0.5rem;
 }
 
 .search-input {
-  width: 100%;
+  flex: 1;
   padding: 0.75rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 0.95rem;
-  font-family: inherit;
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: #0a66c2;
-  box-shadow: 0 0 0 3px rgba(10, 102, 194, 0.1);
-}
-
-textarea.search-input {
-  min-height: 120px;
-  resize: vertical;
-  line-height: 1.5;
+  background: white;
 }
 
 .btn-search {
-  background-color: #2563eb;
-  color: white;
   padding: 0.75rem 2rem;
+  background: #0a66c2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
   white-space: nowrap;
-  font-weight: 500;
 }
 
 .btn-search:hover:not(:disabled) {
-  background-color: #1d4ed8;
+  background: #004182;
 }
 
 .btn-search:disabled {
-  background-color: #93c5fd;
+  background: #9ca3af;
   cursor: not-allowed;
-  opacity: 0.7;
 }
 
 .form-hint {
   font-size: 0.85rem;
-  color: #666;
+  color: #6b7280;
   margin-top: 0.5rem;
   font-style: italic;
 }
@@ -671,6 +691,73 @@ textarea.search-input {
 
 .btn-regenerate:disabled {
   background: #9ca3af;
+}
+
+/* Header Actions - Perfect Alignment */
+.header-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.btn-refresh,
+.btn-logout {
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  padding: 0 1.5rem !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  cursor: pointer !important;
+  border: none !important;
+  transition: all 0.2s !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.5rem !important;
+  box-sizing: border-box !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+}
+
+.btn-refresh {
+  background: white !important;
+  color: #0a66c2 !important;
+}
+
+.btn-refresh:hover:not(:disabled) {
+  background: #f3f6f9 !important;
+}
+
+.btn-refresh:disabled {
+  background: #e5e7eb !important;
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+}
+
+.btn-logout {
+  background: #dc2626 !important;
+  color: white !important;
+}
+
+.btn-logout:hover {
+  background: #b91c1c !important;
+}
+
+.btn-refresh svg,
+.btn-refresh svg.spin {
+  width: 16px !important;
+  height: 16px !important;
+  flex-shrink: 0 !important;
+}
+
+.btn-refresh svg.spin {
+  animation: btnSpin 1s linear infinite !important;
+}
+
+@keyframes btnSpin {
+  to { transform: rotate(360deg); }
 }
 
 /* Dark Mode Variables and Styles */

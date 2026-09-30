@@ -51,6 +51,8 @@ function Dashboard() {
   const [generatingPost, setGeneratingPost] = useState(false);
   const [presenceOnline, setPresenceOnline] = useState(true);
   const [loadingApprove, setLoadingApprove] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState(null);
 
   useEffect(() => {
     fetchPendingItems();
@@ -145,7 +147,8 @@ function Dashboard() {
       
       if (type === 'reply') setReplies(replies.filter(item => item.id !== id));
       if (type === 'connection') setConnections(connections.filter(item => item.id !== id));
-      if (type === 'post') setPosts(posts.filter(item => item.id !== id));
+      if (type === 
+        'post') setPosts(posts.filter(item => item.id !== id));
       
       showNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} dismissed`);
     } catch (error) {
@@ -280,6 +283,69 @@ function Dashboard() {
     window.location.reload();
   };
 
+  // Refresh data function
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setRefreshStatus({ status: 'running', message: 'Starting refresh...' });
+
+    try {
+      const response = await fetch('http://localhost:3001/api/refresh', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('dashboardToken')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        pollRefreshStatus();
+      } else {
+        setRefreshStatus({ status: 'failed', message: result.error });
+        setRefreshing(false);
+      }
+    } catch (error) {
+      console.error('Error starting refresh:', error);
+      setRefreshStatus({ status: 'failed', message: 'Failed to start refresh' });
+      setRefreshing(false);
+    }
+  };
+
+  // Poll refresh status
+  const pollRefreshStatus = async () => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch('http://localhost:3001/api/refresh/status', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('dashboardToken')}`
+          }
+        });
+
+        const status = await response.json();
+        setRefreshStatus(status);
+
+        if (status.status === 'completed') {
+          clearInterval(pollInterval);
+          setRefreshing(false);
+          showNotification('Refresh completed! Reloading data...');
+          
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        } else if (status.status === 'failed') {
+          clearInterval(pollInterval);
+          setRefreshing(false);
+          showNotification(`Refresh failed: ${status.message}`);
+        }
+      } catch (error) {
+        console.error('Error polling status:', error);
+        clearInterval(pollInterval);
+        setRefreshing(false);
+      }
+    }, 3000);
+  };
+
   if (loading) {
     return <div className="loading">Loading...</div>;
   }
@@ -293,42 +359,55 @@ function Dashboard() {
 
   return (
     <div className="app">
-      <header>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h1>LinkedIn Assistant Dashboard</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              fontSize: '0.9rem',
-              color: '#fff'
-            }}>
-              <span style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                backgroundColor: presenceOnline ? '#10b981' : '#6b7280'
-              }}></span>
-              {presenceOnline ? 'Active' : 'Inactive'}
-            </div>
-            {/* ADD LOGOUT BUTTON */}
+      <header className="header">
+        <div className="header-content">
+          <div>
+            <h1>LinkedIn Assistant</h1>
+            <p className="status-indicator">● Active</p>
+          </div>
+          <div className="header-actions">
             <button 
-              onClick={handleLogout}
-              style={{
-                background: '#dc3545',
-                color: 'white',
-                border: 'none',
-                padding: '0.5rem 1rem',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: '500'
-              }}
+              className="btn btn-refresh"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              title={refreshing ? refreshStatus?.message : 'Refresh data from LinkedIn'}
             >
+              <svg 
+                className={refreshing ? 'spin' : ''} 
+                width="16" 
+                height="16" 
+                viewBox="0 0 16 16" 
+                fill="none" 
+                xmlns="http://www.w3.org/2000/svg"
+                style={{ flexShrink: 0 }}
+              >
+                <path 
+                  d="M14 8C14 4.68629 11.3137 2 8 2C4.68629 2 2 4.68629 2 8C2 11.3137 4.68629 14 8 14C9.65 14 11.15 13.35 12.22 12.28" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round"
+                />
+                <path 
+                  d="M14 4V8H10" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+            <button className="btn btn-logout" onClick={handleLogout}>
               Logout
             </button>
           </div>
         </div>
+        {refreshing && refreshStatus && (
+          <div className="refresh-status-bar">
+            <span className="spinner-small"></span>
+            <span>{refreshStatus.message}</span>
+          </div>
+        )}
       </header>
 
       {notification && <div className="notification">{notification}</div>}
@@ -735,16 +814,18 @@ const ContentPostTab = ({
     <h2>Generate Post</h2>
     
     <div className="search-form">
-      <div className="search-inputs" style={{ flexDirection: 'column', gap: '1rem' }}>
-        <textarea
-          className="search-input"
-          style={{ 
-            minHeight: '120px', 
-            resize: 'vertical',
-            fontFamily: 'inherit',
-            padding: '0.75rem'
-          }}
-          placeholder="Describe what you want to post about and how you want it written...
+      <textarea
+        className="search-input"
+        style={{ 
+          minHeight: '120px',
+          resize: 'vertical',
+          fontFamily: 'inherit',
+          padding: '0.75rem',
+          lineHeight: '1.5',
+          width: '100%',
+          marginBottom: '1rem'
+        }}
+        placeholder="Describe what you want to post about and how you want it written...
 
 Examples:
 • Write about my recent internship at Google, keep it casual and under 100 words
@@ -753,18 +834,16 @@ Examples:
 • Discuss the importance of continuous learning, motivational tone, 200-250 words
 
 Leave blank to auto-generate based on your LinkedIn profile."
-          value={instructions}
-          onChange={(e) => onInstructionsChange(e.target.value)}
-        />
-        <button
-          className="btn btn-search"
-          onClick={onGenerate}
-          disabled={generating}
-          style={{ alignSelf: 'flex-start' }}
-        >
-          {generating ? 'Generating...' : 'Generate Post'}
-        </button>
-      </div>
+        value={instructions}
+        onChange={(e) => onInstructionsChange(e.target.value)}
+      />
+      <button
+        className="btn btn-search"
+        onClick={onGenerate}
+        disabled={generating}
+      >
+        {generating ? 'Generating...' : 'Generate Post'}
+      </button>
       <p className="form-hint">
         💡 Tip: Be specific about tone (casual/formal), length, and what to include. The AI will follow your instructions exactly.
       </p>

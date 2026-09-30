@@ -4,8 +4,9 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const fs = require('fs');
+const path = require('path'); // ADD THIS LINE
 const { sendReplyById, sendConnectionById, sendPostById } = require('../executor/send-actions');
-const jwt = require('jsonwebtoken'); // ADD THIS LINE
+const jwt = require('jsonwebtoken');
 const statusRoutes = require('./routes/status');
 
 const app = express();
@@ -815,6 +816,115 @@ function getPeriodStartDate(now, period) {
 
 // Mount status routes
 app.use('/api/status', authenticateToken, statusRoutes);
+
+// Refresh status tracking
+let refreshStatus = {
+  status: 'idle', // 'idle' | 'running' | 'completed' | 'failed'
+  message: '',
+  startedAt: null,
+  completedAt: null
+};
+
+// POST /api/refresh - Trigger full scraping pipeline
+app.post('/api/refresh', authenticateToken, async (req, res) => {
+  if (refreshStatus.status === 'running') {
+    return res.status(409).json({ 
+      error: 'Refresh already in progress',
+      status: refreshStatus.status 
+    });
+  }
+
+  // Reset status
+  refreshStatus = {
+    status: 'running',
+    message: 'Starting refresh...',
+    startedAt: new Date(),
+    completedAt: null
+  };
+
+  // Respond immediately
+  res.json({ 
+    success: true, 
+    message: 'Refresh started',
+    status: 'running'
+  });
+
+  // Run pipeline asynchronously
+  (async () => {
+    try {
+      const { execSync } = require('child_process');
+      
+      // Get the project root directory (where package.json is)
+      const projectRoot = path.join(__dirname, '..', '..');
+
+      console.log('🔄 Starting refresh pipeline...');
+      console.log('📁 Project root:', projectRoot);
+
+      // Step 1: Read inbox messages
+      refreshStatus.message = 'Reading inbox messages...';
+      console.log('📥 Running 3-read-inbox.js...');
+      execSync('node src/scrapers/3-read-inbox.js', { 
+        cwd: projectRoot,
+        stdio: 'inherit' 
+      });
+
+      // Step 2: Read full message threads
+      refreshStatus.message = 'Reading message threads...';
+      console.log('📨 Running 4-read-full-threads.js...');
+      execSync('node src/scrapers/4-read-full-threads.js', { 
+        cwd: projectRoot,
+        stdio: 'inherit' 
+      });
+
+      // Step 3: Draft replies
+      refreshStatus.message = 'Drafting replies...';
+      console.log('✍️ Running 5-draft-replies.js...');
+      execSync('node src/agents/5-draft-replies.js', { 
+        cwd: projectRoot,
+        stdio: 'inherit' 
+      });
+
+      // Step 4: Read suggested connections
+      refreshStatus.message = 'Reading suggested connections...';
+      console.log('👥 Running 8-read-suggested-connections.js...');
+      execSync('node src/scrapers/8-read-suggested-connections.js', { 
+        cwd: projectRoot,
+        stdio: 'inherit' 
+      });
+
+      // Step 5: Draft connection notes
+      refreshStatus.message = 'Drafting connection notes...';
+      console.log('📝 Running 9-draft-connection-notes.js...');
+      execSync('node src/agents/9-draft-connection-notes.js', { 
+        cwd: projectRoot,
+        stdio: 'inherit' 
+      });
+
+      refreshStatus = {
+        status: 'completed',
+        message: 'Refresh completed successfully',
+        startedAt: refreshStatus.startedAt,
+        completedAt: new Date()
+      };
+
+      console.log('✅ Refresh pipeline completed successfully');
+
+    } catch (error) {
+      console.error('❌ Refresh pipeline failed:', error);
+      refreshStatus = {
+        status: 'failed',
+        message: error.message || 'Refresh failed',
+        startedAt: refreshStatus.startedAt,
+        completedAt: new Date()
+      };
+    }
+  })();
+});
+
+// GET /api/refresh/status - Check refresh progress
+app.get('/api/refresh/status', authenticateToken, (req, res) => {
+  res.json(refreshStatus);
+});
 
 app.listen(PORT, () => {
   console.log(`API server running on http://localhost:${PORT}`);
