@@ -1,89 +1,55 @@
-# LinkedIn Assistant
+# LinkedIn AI Assistant
 
-A personal AI-powered LinkedIn assistant with a multi-agent architecture.
-Read-only browser automation gathers data from LinkedIn; AI agents draft
-suggestions; all outward actions (sending messages, posting, connecting)
-are reviewed and executed manually by the user, per the project's
-compliance-first design.
+An AI-powered LinkedIn assistant that reads your inbox, suggests connections, matches jobs and drafts content. It drafts, you decide. Built as an internship project at Tavant Technologies.
 
-## Project Structure
+> **Educational project.** Use it only on your own account and in line with LinkedIn's User Agreement. Nothing public-facing (posts) or high-stakes (job applications) is ever done automatically.
+
+![Dashboard](docs/dashboard.png)
+
+## What it does
+
+| Agent | Job |
+|---|---|
+| Chat | Reads inbox threads and drafts replies |
+| Networking | Finds suggested connections and drafts connection notes |
+| Job Match | Scores job listings from 0 to 100 against your profile, with a reason |
+| Profile Optimizer | Suggests improvements to your profile |
+| Content | Drafts LinkedIn posts |
+
+## Trust model: who decides what
+
+| Action | Level |
+|---|---|
+| Bare connection requests | **Automatic**, toward a daily or weekly target you set |
+| Message replies and connection notes | **One click**: sent only after you approve |
+| Posts | **Never automatic**: always manually approved |
+| Job applications and profile edits | **Manual**: you do them |
+
+## Architecture
+
+![Architecture](docs/architecture.png)
+
+**Tech stack:** Node.js, Playwright, Express.js (REST API, JWT auth), React + Vite dashboard, Supabase (PostgreSQL), Gemini API, Twilio WhatsApp (fallback notifications).
+
+## Project structure
 
 ```
-linkedin-assistant/
-├── src/
-│   ├── session/          # Login and session persistence
-│   │   ├── 1-login-and-save-session.js
-│   │   └── 2-verify-session.js
-│   ├── scrapers/         # Read-only data extraction from LinkedIn
-│   │   ├── 3-read-inbox.js
-│   │   ├── 4-read-full-threads.js
-│   │   └── 6-read-profile.js
-│   └── agents/           # AI-powered drafting/analysis
-│       └── 5-draft-replies.js
-├── data/                 # Generated data (gitignored - contains
-│                            personal info, never committed)
-├── .env                  # API keys (gitignored)
-├── .gitignore
-├── package.json
-└── README.md
+src/session/    log in once and save the browser session
+src/scrapers/   Playwright scrapers (inbox, threads, profile, connections, jobs)
+src/agents/     the five AI agents
+src/executor/   send, auto-send, target fulfilment and post executors
+src/api/        Express API (port 3001)
+dashboard/      React + Vite dashboard (port 5173)
 ```
 
-## Setup
+## Getting started
 
-```bash
-npm install
-npx playwright install chromium
-```
+1. Clone the repo and run `npm install` in the root folder and in `dashboard/`.
+2. Create a `.env` file from `.env.example` and fill in your own keys (Gemini, Supabase, JWT secret, Twilio). **Never commit `.env`.**
+3. Save a LinkedIn session: `node src/session/1-login-and-save-session.js`
+4. Run the profile scraper first (agents need your profile data), then the other scrapers and agents.
+5. Start the API server, then the dashboard (`npm run dev` in `dashboard/`).
 
-Create a `.env` file in the project root with:
-```
-GEMINI_API_KEY=your_key_here
-```
+## Author
 
-## Running the scripts
-
-All commands are run from the project root (not from inside `src/`).
-
-**1. Log in and save your session** (run this first, and again any time
-your session expires):
-```bash
-node src/session/1-login-and-save-session.js
-```
-
-**2. Verify the saved session still works:**
-```bash
-node src/session/2-verify-session.js
-```
-
-**3. Read inbox conversation previews:**
-```bash
-node src/scrapers/3-read-inbox.js
-```
-
-**4. Read full message threads:**
-```bash
-node src/scrapers/4-read-full-threads.js
-```
-
-**5. Draft AI-powered replies** (requires threads-data.json from step 4,
-and a GEMINI_API_KEY in .env):
-```bash
-node src/agents/5-draft-replies.js
-```
-
-**6. Read your own profile data:**
-```bash
-node src/scrapers/6-read-profile.js
-```
-
-## Important notes
-
-- All scripts are **read-only automation** except the Gemini drafting
-  script, which only generates text - nothing is ever sent to LinkedIn
-  automatically. Sending messages, connecting, or posting is always done
-  manually by the user after reviewing AI-drafted suggestions.
-- The `data/` folder contains real personal data (messages, profile info)
-  and is excluded from git via `.gitignore`. Never remove it from
-  `.gitignore`.
-- `auth.json` (inside `data/`) contains live session credentials - treat
-  it like a password.
+T. Meghana Reddy, B.Tech Information Technology, Manipal University Jaipur.
